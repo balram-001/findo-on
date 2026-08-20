@@ -51,7 +51,7 @@ export default function DashboardPage() {
     );
   };
 
-  // Fixed Fetch Leads Logic (Industry + Category Payload)
+  // Fixed Fetch Leads Logic (Removes artificial group truncation)
   const handleFetchLeads = async () => {
     if (!city.trim() && selectedIndustries.length === 0) {
       setLeads([]);
@@ -77,40 +77,40 @@ export default function DashboardPage() {
       const parsedLimit = parseInt(String(numLeads), 10) || 50;
       const industriesToFetch = selectedIndustries.length > 0 ? selectedIndustries : [""];
       const perIndustryLimit = Math.ceil(parsedLimit / industriesToFetch.length);
-      // Fetch a duplicate buffer. After browser-side cleanup we can still show
-      // the exact number requested whenever enough unique leads exist.
       const perIndustryFetchLimit = Math.min(perIndustryLimit * 2, 500);
+
       const responses = await Promise.all(
         industriesToFetch.map(async (industry) => {
           const res = await fetch("/api/scrape", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ industry, category: industry, city: city.trim(), limit: perIndustryFetchLimit, maxResults: perIndustryFetchLimit }),
+            body: JSON.stringify({ 
+              industry, 
+              category: industry, 
+              city: city.trim(), 
+              limit: perIndustryFetchLimit, 
+              maxResults: perIndustryFetchLimit 
+            }),
           });
           return res.json();
         })
       );
-      const resultGroups = responses
-        .map((data) => (data.success && Array.isArray(data.data) ? data.data : []))
-        .filter((group) => group.length > 0);
-      // When two or more industries are chosen, use the same number from each
-      // response so the sheet is balanced instead of one industry dominating.
-      const perIndustryReturned = resultGroups.length > 1
-        ? Math.min(perIndustryLimit, ...resultGroups.map((group) => group.length))
-        : Math.min(perIndustryLimit, resultGroups[0]?.length || 0);
-      const fetchedData = perIndustryReturned
-        ? resultGroups.flatMap((group) => group.slice(0, perIndustryReturned))
-        : resultGroups.flat();
+
+      // Har industry group se maximum available unique leads fetch karein
+      const fetchedData = responses.flatMap((data) => {
+        return data.success && Array.isArray(data.data) ? data.data : [];
+      });
 
       if (fetchedData.length > 0) {
         const seenNames = new Set<string>();
         const uniqueFetched = fetchedData.filter((item: Lead) => {
           const name = (item.companyName || item.company_name || "").toLowerCase().trim();
-          if (!name || name === "n/A" || seenNames.has(name)) return false;
+          if (!name || name === "n/a" || seenNames.has(name)) return false;
           seenNames.add(name);
           return true;
         });
 
+        // Exact requested limit tak cut karein
         setLeads(uniqueFetched.slice(0, parsedLimit));
       } else {
         setLeads([]);
