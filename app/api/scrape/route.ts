@@ -86,12 +86,6 @@ const INDUSTRY_EXCLUDE_MAP: Record<string, string[]> = {
   ],
 };
 
-function getRequiredEnv(name: "NEXT_PUBLIC_SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY"): string {
-  const val = process.env[name]?.trim();
-  if (!val) throw new Error(`Missing environment variable: ${name}`);
-  return val;
-}
-
 function parseLimit(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? DEFAULT_LIMIT), 10);
   return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), MAX_RESULTS) : DEFAULT_LIMIT;
@@ -167,7 +161,6 @@ async function fetchLeadsForSingleIndustry(
 
   let dbQuery = supabase.from("active_leads").select("*", { count: "exact" });
 
-  // 💡 FIX: Broad Partial Match (%city%) for both city & location column so sub-areas like Pithampur don't fail
   if (!wantsAllCities) {
     dbQuery = dbQuery.or(`city.ilike.%${city}%,location.ilike.%${city}%`);
   }
@@ -260,8 +253,28 @@ export async function POST(request: Request) {
     const city = rawCity ? sanitizeFilterValue(rawCity) : "";
     const requestedLimit = parseLimit(body.maxResults ?? body.limit);
 
-    const supabaseUrl = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
-    const serviceKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+    // Multi-key fallback to prevent missing env crashes
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
+      process.env.SUPABASE_URL?.trim() ||
+      "";
+
+    const serviceKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+      process.env.SUPABASE_ANON_KEY?.trim() ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
+      "";
+
+    if (!supabaseUrl || !serviceKey) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Missing Supabase Environment Variables. URL found: ${Boolean(supabaseUrl)}, KEY found: ${Boolean(serviceKey)}`,
+        },
+        { status: 500 }
+      );
+    }
+
     const supabase = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
