@@ -11,7 +11,9 @@ const MAX_CANDIDATE_ROWS = 1_000;
 type ApiRequest = {
   query?: string;
   industry?: string;
+  industries?: string[];
   category?: string;
+  categories?: string[];
   city?: string;
   limit?: number;
   maxResults?: number;
@@ -33,7 +35,6 @@ type LeadRow = {
   gst_status?: string;
 };
 
-// Positive Keywords Map
 const INDUSTRY_SEARCH_MAP: Record<string, string[]> = {
   "Automobile & Auto Components": [
     "Auto", "Automobile", "Forging", "Component", "Machining", "Vehicle", "Spare",
@@ -52,9 +53,6 @@ const INDUSTRY_SEARCH_MAP: Record<string, string[]> = {
   ],
 };
 
-// These are the database labels that belong to each dashboard option.  Use
-// them as the primary guard: categories can overlap (for example, "Pharma
-// Packaging"), but a lead's industry must not leak into another tab.
 const INDUSTRY_LABEL_MAP: Record<string, string[]> = {
   "Automobile & Auto Components": ["Automobile & Auto Components"],
   "Pharmaceuticals & Healthcare Manufacturing": ["Pharmaceuticals & Healthcare Manufacturing"],
@@ -70,7 +68,6 @@ const PACKAGING_INDUSTRY = "Packaging, Plastics & Paper Manufacturing";
 const PHARMA_INDUSTRY = "Pharmaceuticals & Healthcare Manufacturing";
 const PHARMA_PACKAGING_KEYWORDS = ["packag", "blister", "foil", "bottle", "carton", "label"];
 
-// 💡 FIX: Negative Exclusion Map (Takes out cross-industry mixed leads like Edible Oil from Chemical)
 const INDUSTRY_EXCLUDE_MAP: Record<string, string[]> = {
   "Chemical Manufacturing & Allied Industries": [
     "edible oil", "food", "food processing", "agro processing", "agriculture", "agricultural", "masala", "spice", "snack", "flour", "grain", "rice mill", "dal mill", "cold storage", "dairy", "bakery", "beverage", "catering", "restaurant", "hotel", "poultry", "animal feed", "cold chain"
@@ -121,16 +118,10 @@ function rowMatchesIndustry(row: LeadRow, targetIndustry: string, wantsAllIndust
   const allowedLabels = INDUSTRY_LABEL_MAP[targetIndustry];
   const rowIndustry = (row.industry || "").toLowerCase().trim();
 
-  // Some packaging suppliers are sourced via pharma-specific searches and are
-  // labelled Pharma in the database. Keep them only when their category proves
-  // they manufacture packaging—not medicines, APIs, or formulations.
   if (targetIndustry === PACKAGING_INDUSTRY && rowIndustry === PHARMA_INDUSTRY.toLowerCase()) {
     return isPharmaPackagingLead(row);
   }
 
-  // Category labels overlap between verticals. A Pharma Packaging record, for
-  // example, may contain "packaging" but it is still a Pharma lead. For the
-  // dashboard's fixed industries, the saved industry label is authoritative.
   if (allowedLabels) {
     return allowedLabels.some((label) => label.toLowerCase() === rowIndustry);
   }
@@ -140,9 +131,6 @@ function rowMatchesIndustry(row: LeadRow, targetIndustry: string, wantsAllIndust
   const requiredKeywords = resolveIndustryKeywords(targetIndustry).map((keyword) => keyword.toLowerCase());
   const exclusionKeywords = INDUSTRY_EXCLUDE_MAP[targetIndustry] || [];
 
-  // The database query is intentionally broad to find variations such as
-  // "industrial chemicals". Validate it again here so a mixed category cannot
-  // leak into the result just because it contains one matching word.
   const hasIndustrySignal = requiredKeywords.some((keyword) => searchableIndustryText.includes(keyword));
   const hasExcludedSignal = exclusionKeywords.some((keyword) => allRowText.includes(keyword));
 
@@ -166,11 +154,84 @@ function getQueryIndustryLabels(targetIndustry: string): string[] | undefined {
     : labels;
 }
 
-function getAvailableResultLimit(requestedLimit: number): number {
-  // Return the exact requested count whenever that many verified, unique
-  // records exist. The final slice naturally returns fewer only when the
-  // selected city/industry has fewer eligible records in the database.
-  return requestedLimit;
+// 💡 FIX: Set parameter type to 'any' to avoid Postgrest version type collision
+async function fetchLeadsForSingleIndustry(
+  supabase: any,
+  targetIndustry: string,
+  city: string,
+  perIndustryLimit: number,
+  seenGlobalNames: Set<string>
+) {
+  const normalizedIndustry = targetIndustry.toLowerCase();
+  const wantsAllIndustries = !targetIndustry || normalizedIndustry === "all" || normalizedIndustry === "all industries";
+
+  let dbQuery = supabase.from("active_leads").select("*", { count: "exact" });
+
+  if (city) {
+    dbQuery = dbQuery.ilike("city", city);
+  }
+
+  let industryHasNoValidFilter = false;
+
+  if (!wantsAllIndustries) {
+    const allowedLabels = getQueryIndustryLabels(targetIndustry);
+
+    if (allowedLabels) {
+      dbQuery = dbQuery.in("industry", allowedLabels);
+    } else {
+      const keywords = resolveIndustryKeywords(targetIndustry);
+
+      if (keywords.length === 0) {
+        industryHasNoValidFilter = true;
+      } else {
+        const conditions: string[] = [];
+        keywords.forEach((kw) => {
+          conditions.push(`industry.ilike.%${kw}%`);
+          conditions.push(`category.ilike.%${kw}%`);
+        });
+        dbQuery = dbQuery.or(conditions.join(","));
+      }
+    }
+  }
+
+  let rows: LeadRow[] = [];
+  if (!industryHasNoValidFilter) {
+    const result = await dbQuery
+      .order("created_at", { ascending: false })
+      .limit(Math.min(MAX_CANDIDATE_ROWS, perIndustryLimit * 5));
+    rows = (result.data as LeadRow[]) || [];
+  }
+
+  const cleanLeads: Array<Record<string, unknown>> = [];
+
+  rows.forEach((row, idx) => {
+    const nameKey = (row.company_name || "").toLowerCase().trim();
+
+    if (!nameKey || nameKey === "n/a") return;
+    if (seenGlobalNames.has(nameKey)) return;
+    if (!rowMatchesIndustry(row, targetIndustry, wantsAllIndustries)) return;
+
+    seenGlobalNames.add(nameKey);
+
+    const isSpecialPackagingLead = targetIndustry === PACKAGING_INDUSTRY && isPharmaPackagingLead(row);
+
+    cleanLeads.push({
+      id: row.id ?? idx + 1,
+      companyName: row.company_name || "N/A",
+      industry: isSpecialPackagingLead ? PACKAGING_INDUSTRY : row.industry || targetIndustry || "General Manufacturing",
+      category: row.category || targetIndustry || "General",
+      location: row.location || row.city || city || "Indore",
+      phone: row.phone || "N/A",
+      phoneType: row.phone_type || (row.phone ? "Mobile" : "Missing"),
+      isWhatsapp: Boolean(row.is_whatsapp),
+      website: row.website || undefined,
+      gstin: row.gstin || undefined,
+      gstStatus: row.gst_status || undefined,
+      whatsappLink: row.whatsapp_link || undefined,
+    });
+  });
+
+  return cleanLeads.slice(0, perIndustryLimit);
 }
 
 export async function POST(request: Request) {
@@ -184,13 +245,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Invalid JSON request body." }, { status: 400 });
     }
 
-    const targetIndustry = body.industry?.trim() || body.category?.trim() || "";
+    let targetIndustries: string[] = [];
+    if (Array.isArray(body.industries) && body.industries.length > 0) {
+      targetIndustries = body.industries.map((s) => s.trim()).filter(Boolean);
+    } else if (Array.isArray(body.categories) && body.categories.length > 0) {
+      targetIndustries = body.categories.map((s) => s.trim()).filter(Boolean);
+    } else {
+      const single = body.industry?.trim() || body.category?.trim() || "";
+      if (single) targetIndustries = [single];
+    }
+
     const rawCity = body.city?.trim() || "";
     const city = rawCity ? sanitizeFilterValue(rawCity) : "";
     const requestedLimit = parseLimit(body.maxResults ?? body.limit);
-    const availableResultLimit = getAvailableResultLimit(requestedLimit);
-    const normalizedIndustry = targetIndustry.toLowerCase();
-    const wantsAllIndustries = !targetIndustry || normalizedIndustry === "all" || normalizedIndustry === "all industries";
 
     const supabaseUrl = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
     const serviceKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -198,91 +265,32 @@ export async function POST(request: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    let dbQuery = supabase.from("active_leads").select("*", { count: "exact" });
+    const isSingleOrAll = targetIndustries.length <= 1;
+    let finalResult: Array<Record<string, unknown>> = [];
 
-    if (city) {
-      // City is the canonical normalized field. Do not use a loose location
-      // search here: a Dewas/Pithampur address can mention Indore as nearby.
-      dbQuery = dbQuery.ilike("city", city);
-    }
-
-    let industryHasNoValidFilter = false;
-
-    if (!wantsAllIndustries) {
-      const allowedLabels = getQueryIndustryLabels(targetIndustry);
-
-      if (allowedLabels) {
-        dbQuery = dbQuery.in("industry", allowedLabels);
-      } else {
-        const keywords = resolveIndustryKeywords(targetIndustry);
-
-        if (keywords.length === 0) {
-          industryHasNoValidFilter = true;
-        } else {
-          const conditions: string[] = [];
-          keywords.forEach((kw) => {
-            conditions.push(`industry.ilike.%${kw}%`);
-            conditions.push(`category.ilike.%${kw}%`);
-          });
-          dbQuery = dbQuery.or(conditions.join(","));
-        }
-      }
-    }
-
-    let rows: LeadRow[] = [];
-    let error: { message: string } | null = null;
-
-    if (industryHasNoValidFilter) {
-      rows = [];
+    if (isSingleOrAll) {
+      const targetIndustry = targetIndustries[0] || "";
+      const seenGlobalNames = new Set<string>();
+      finalResult = await fetchLeadsForSingleIndustry(
+        supabase,
+        targetIndustry,
+        city,
+        requestedLimit,
+        seenGlobalNames
+      );
     } else {
-      const result = await dbQuery
-        .order("created_at", { ascending: false })
-        .limit(Math.min(MAX_CANDIDATE_ROWS, requestedLimit * 5)); // Buffer for strict quality filtering
-      rows = (result.data as LeadRow[]) || [];
-      error = result.error;
+      const perIndustryLimit = Math.max(1, Math.floor(requestedLimit / targetIndustries.length));
+      const seenGlobalNames = new Set<string>();
+
+      const results = await Promise.all(
+        targetIndustries.map((ind) =>
+          fetchLeadsForSingleIndustry(supabase, ind, city, perIndustryLimit, seenGlobalNames)
+        )
+      );
+
+      finalResult = results.flat();
     }
 
-    if (error) {
-      console.error("Supabase Error:", error.message);
-      return NextResponse.json({ success: false, error: `Database Error: ${error.message}` }, { status: 500 });
-    }
-
-    const seenNames = new Set<string>();
-    const cleanLeads: Array<Record<string, unknown>> = [];
-
-    rows.forEach((row, idx) => {
-      const nameKey = (row.company_name || "").toLowerCase().trim();
-
-      // A row without a company name cannot be a usable unique lead and would
-      // later collapse into repeated "N/A" entries in the client.
-      if (!nameKey || nameKey === "n/a") return;
-
-      if (nameKey && seenNames.has(nameKey)) return;
-
-      if (!rowMatchesIndustry(row, targetIndustry, wantsAllIndustries)) return;
-
-      if (nameKey) seenNames.add(nameKey);
-
-      const isSpecialPackagingLead = targetIndustry === PACKAGING_INDUSTRY && isPharmaPackagingLead(row);
-
-      cleanLeads.push({
-        id: row.id ?? idx + 1,
-        companyName: row.company_name || "N/A",
-        industry: isSpecialPackagingLead ? PACKAGING_INDUSTRY : row.industry || targetIndustry || "General Manufacturing",
-        category: row.category || targetIndustry || "General",
-        location: row.location || row.city || city || "Indore",
-        phone: row.phone || "N/A",
-        phoneType: row.phone_type || (row.phone ? "Mobile" : "Missing"),
-        isWhatsapp: Boolean(row.is_whatsapp),
-        website: row.website || undefined,
-        gstin: row.gstin || undefined,
-        gstStatus: row.gst_status || undefined,
-        whatsappLink: row.whatsapp_link || undefined,
-      });
-    });
-
-    // Return the requested count when available; never fabricate missing leads.
-    const finalResult = cleanLeads.slice(0, availableResultLimit);
     const executionTimeMs = Date.now() - startTime;
 
     return NextResponse.json({
@@ -291,9 +299,8 @@ export async function POST(request: Request) {
       data: finalResult,
       meta: {
         requested: requestedLimit,
-        resultLimit: availableResultLimit,
         returned: finalResult.length,
-        industry: targetIndustry || "All",
+        industry: targetIndustries.length > 0 ? targetIndustries.join(", ") : "All",
         city: city || "All",
         executionTimeMs: `${executionTimeMs}ms`,
       },

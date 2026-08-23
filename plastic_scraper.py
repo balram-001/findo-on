@@ -1,203 +1,275 @@
 import asyncio
-import json
 import os
-import sys
 import re
-import random
+import sys
 from pathlib import Path
+from urllib.parse import quote
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 from supabase import create_client, Client
 
 # ==========================================
-# 1. ABSOLUTE .ENV LOADING & SUPABASE SETUP
+# 1. SETUP & DB CACHE
 # ==========================================
 BASE_DIR = Path(__file__).resolve().parent
-ENV_FILE = BASE_DIR / ".env"
-
-print(f"🔍 Loading configuration from: {ENV_FILE}")
+ENV_FILE = BASE_DIR / ".env.local" if (BASE_DIR / ".env.local").exists() else BASE_DIR / ".env"
 
 if not ENV_FILE.exists():
-    print(f"❌ ERROR: `.env` file not found at {ENV_FILE}")
-    print("👉 Solution: Create a file named `.env` in your project root directory.")
+    print("❌ Error: `.env.local` ya `.env` file nahi mili!")
     sys.exit(1)
 
 load_dotenv(dotenv_path=ENV_FILE, override=True)
 
-SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL", "").strip()
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+SUPABASE_URL = (os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL") or "").strip()
+SUPABASE_KEY = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY") or "").strip()
 
-print(f"🔗 Loaded Supabase URL: {SUPABASE_URL if SUPABASE_URL else '❌ NOT FOUND'}")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-if not SUPABASE_URL or "your-supabase-url" in SUPABASE_URL:
-    raise ValueError("❌ Invalid SUPABASE_URL! Please verify the content inside your .env file.")
+INDUSTRY = "Packaging, Plastics & Paper Manufacturing"
+TARGET_NEW_LEADS = 50
 
-try:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print("✅ Supabase Client Initialized Successfully!")
-except Exception as e:
-    print(f"❌ Failed to connect to Supabase: {e}")
-    sys.exit(1)
-
-# Helper: GSTIN Generator for MP (State Code 23)
-def generate_gstin():
-    state_code = "23"
-    random_pan = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=5)) + \
-                 "".join(random.choices("0123456789", k=4)) + \
-                 random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    return f"{state_code}{random_pan}1Z5"
-
-def clean_company_name(name):
-    """Company name me se extra suffix hatakar strictly compare karta hai"""
-    name = name.lower()
-    name = re.sub(r'\b(pvt|ltd|private|limited|co|company|indore|mfg|manufacturers|traders|dealers|moulding|molding|plastics|components|works|industry|industries)\b', '', name)
-    return re.sub(r'[^a-z0-9]', '', name)
-
-
-# ==========================================
-# 2. STRICTLY INDORE PLASTIC SCRAPER
-# ==========================================
-PLASTIC_SEARCH_QUERIES = [
-    "Plastic Moulding Manufacturers in Indore",
-    "Plastic Moulding Components in Pithampur Indore",
-    "Plastic Injection Moulding in Sanwer Road Indore",
-    "Plastic Component Manufacturers in Indore",
-    "Plastic Blow Moulding Factory in Indore",
-    "Plastic Packaging Manufacturers in Indore",
-    "Plastic Product Manufacturers in Indore",
-    "Plastic Containers Manufacturers in Indore",
-    "Polymer Products Manufacturers in Indore",
-    "Plastic Articles Manufacturers in Palda Indore",
-    "Plastic Moulding Works in Rau Indore"
+# Targeted B2B Manufacturing Micro-Queries
+COMBINED_QUERIES = [
+    {"query": "Corrugated box manufacturers Sanwer Road Indore", "category": "Paper & Corrugated Packaging"},
+    {"query": "Plastic injection molding plant Pithampur Sector 1", "category": "Plastic Packaging"},
+    {"query": "Flexible packaging materials factory Dewas Industrial Area", "category": "Flexible Packaging"},
+    {"query": "HDPE bottle manufacturer Sanwer Road Sector D Indore", "category": "Plastic Packaging"},
+    {"query": "Industrial paper bags manufacturing plant Indore", "category": "Paper & Corrugated Packaging"},
+    {"query": "PET preform bottle manufacturer Pithampur Sector 3", "category": "Plastic Packaging"},
+    {"query": "Printed duplex box manufacturer Sanwer Road Indore", "category": "Paper & Corrugated Packaging"},
+    {"query": "Blister packaging material manufacturer Pithampur", "category": "Pharmaceutical Packaging"},
+    {"query": "Stretch film and shrink wrap manufacturer Palda Indore", "category": "Plastic Packaging"},
+    {"query": "PP woven bags factory Dewas Sector 1", "category": "Plastic Packaging"},
+    {"query": "Thermocol packaging factory Pithampur Kheda", "category": "Industrial Packaging"},
+    {"query": "Rigid plastic container manufacturer Sanwer Road Indore", "category": "Plastic Packaging"},
+    {"query": "Polythene and pouch packaging manufacturer Rau Indore", "category": "Flexible Packaging"},
+    {"query": "Strapping roll and packaging tape factory Indore", "category": "Industrial Packaging"},
+    {"query": "Paper core tube manufacturer Pithampur Industrial Belt", "category": "Paper & Corrugated Packaging"},
+    {"query": "Corrugated carton box factory Palda Industrial Area Indore", "category": "Paper & Corrugated Packaging"},
+    {"query": "Blow moulding plastic container plant Pithampur Sector 2", "category": "Plastic Packaging"},
+    {"query": "Laminated pouch manufacturer Sanwer Road Sector C Indore", "category": "Flexible Packaging"},
+    {"query": "Wooden pallet and crate manufacturer Pithampur", "category": "Industrial Packaging"},
+    {"query": "Pharma foil packaging manufacturer Sanwer Road Indore", "category": "Pharmaceutical Packaging"},
+    {"query": "Offset printing packaging box factory Indore", "category": "Paper & Corrugated Packaging"},
+    {"query": "Plastic cap and closure manufacturer Pithampur", "category": "Plastic Packaging"}
 ]
 
-async def scrape_plastic_leads(max_total=100):
-    print(f"\n🚀 Starting Plastic Moulding Scraper for Indore (Target: {max_total} Unique Leads)\n" + "="*60)
+# Strict Rejects (Filter out B2C retail shops, stationeries, gift shops)
+STRICT_REJECTS = [
+    "gift shop", "stationery shop", "bag shop", "toy shop", "disposable shop", 
+    "retail store", "grocery store", "crockery store", "paper store", "dawa bazar"
+]
+
+def normalize_name(name: str) -> str:
+    clean = (name or "").lower()
+    clean = re.sub(r'\b(pvt|ltd|private|limited|co|company|indore|pithampur|dewas)\b', '', clean)
+    return re.sub(r'[^a-z0-9]', '', clean).strip()
+
+def classify_phone(raw_phone: str):
+    if not raw_phone or raw_phone == "N/A":
+        return "N/A", "Missing", False, None
     
-    extracted_leads = []
-    seen_company_keys = set()
-    seen_phones = set()
+    digits = re.sub(r"\D", "", str(raw_phone))
+    if not digits:
+        return "N/A", "Missing", False, None
+
+    core = digits[2:] if digits.startswith("91") and len(digits) > 10 else digits
+    core = core.lstrip("0")
+
+    if len(core) == 10 and core[0] in "6789":
+        return f"+91{core}", "Mobile", True, f"https://wa.me/91{core}"
+    
+    formatted = digits if digits.startswith("0") else f"0{core}"
+    return formatted, "Landline", False, None
+
+def is_unwanted_entity(name: str, text: str = "") -> bool:
+    combined = f"{name} {text}".lower()
+    return any(term in combined for term in STRICT_REJECTS)
+
+def fetch_existing_cache():
+    try:
+        res = supabase.table("active_leads").select("company_name,phone").execute()
+        existing = res.data or []
+        names = {normalize_name(item.get("company_name")) for item in existing if item.get("company_name")}
+        phones = {re.sub(r"\D", "", str(item.get("phone"))) for item in existing if item.get("phone") and item.get("phone") != "N/A"}
+        return names, phones
+    except Exception as e:
+        print(f"⚠️ Cache Load Exception: {e}")
+        return set(), set()
+
+# Helper 1: Google Search for missing website
+async def search_website_on_google(context, comp_name: str) -> str:
+    search_tab = await context.new_page()
+    website_url = None
+    try:
+        query = f"{comp_name} official website Indore"
+        await search_tab.goto(f"https://www.google.com/search?q={quote(query)}", wait_until="domcontentloaded", timeout=10000)
+        
+        links = await search_tab.locator('div.g a[href^="http"]').all()
+        for link in links:
+            href = await link.get_attribute("href")
+            if href and not any(ignored in href for ignored in ["google.com", "facebook.com", "instagram.com", "indiamart.com", "justdial.com"]):
+                website_url = href
+                break
+    except Exception:
+        pass
+    finally:
+        await search_tab.close()
+    return website_url
+
+# Helper 2: Extract phone from official website
+async def scrape_phone_from_website(context, website_url: str) -> str:
+    if not website_url:
+        return "N/A"
+    
+    site_tab = await context.new_page()
+    found_phone = "N/A"
+    try:
+        await site_tab.goto(website_url, wait_until="domcontentloaded", timeout=8000)
+        site_text = (await site_tab.locator("body").inner_text())[:15000]
+        match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', site_text)
+        if match:
+            found_phone = match.group(0).strip()
+    except Exception:
+        pass
+    finally:
+        await site_tab.close()
+    return found_phone
+
+# ==========================================
+# 2. SCRAPING ENGINE (Website Priority)
+# ==========================================
+async def scrape_all_leads():
+    existing_names, existing_phones = fetch_existing_cache()
+    print(f"📦 Cached Existing Records: {len(existing_names)} Companies | {len(existing_phones)} Phones\n")
+    
+    inserted_leads_count = 0
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(viewport={'width': 1280, 'height': 800})
+        browser = await p.chromium.launch(
+            headless=False,
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+        )
+        context = await browser.new_context(
+            viewport={'width': 1366, 'height': 768},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
+        
         page = await context.new_page()
 
-        for query in PLASTIC_SEARCH_QUERIES:
-            if len(extracted_leads) >= max_total:
+        for q_data in COMBINED_QUERIES:
+            if inserted_leads_count >= TARGET_NEW_LEADS:
                 break
 
-            print(f"\n🔍 Searching Area Keyword: '{query}'")
-            maps_url = f"https://www.google.com/maps/search/{query.replace(' ', '+')}"
-            await page.goto(maps_url, wait_until="domcontentloaded")
-            await page.wait_for_timeout(3000)
+            query = q_data["query"]
+            category = q_data["category"]
+            print(f"🔎 [SEARCHING] '{query}'")
+
+            try:
+                await page.goto(f"https://www.google.com/maps/search/{quote(query)}", wait_until="domcontentloaded", timeout=25000)
+                await page.wait_for_selector('div[role="feed"]', timeout=15000)
+            except Exception:
+                continue
 
             sidebar = page.locator('div[role="feed"]')
-            
-            # Deep scroll to load more Indore listings per query
-            for _ in range(15):
-                if await sidebar.count() > 0:
-                    await sidebar.evaluate("el => el.scrollTop = el.scrollHeight")
-                    await page.wait_for_timeout(1500)
+            if await sidebar.count() > 0:
+                for _ in range(12):
+                    await sidebar.evaluate("el => el.scrollBy(0, 2000)")
+                    await asyncio.sleep(0.4)
 
-            articles = await page.locator('div[role="article"]').all()
+            cards = await page.locator('div[role="article"]').all()
 
-            for article in articles:
+            for card in cards:
+                if inserted_leads_count >= TARGET_NEW_LEADS:
+                    break
+
                 try:
-                    name_el = article.locator('div.qBF1Pd')
-                    if not await name_el.count():
-                        continue
-                    
-                    comp_name = (await name_el.inner_text()).strip()
-                    clean_key = clean_company_name(comp_name)
+                    name_el = card.locator('div.qBF1Pd, a.hfT39').first
+                    comp_name = (await name_el.inner_text()).strip() if await name_el.count() else await card.get_attribute("aria-label") or ""
+                    clean_key = normalize_name(comp_name)
 
-                    # Filter 1: Cleaned Name Deduplication
-                    if not clean_key or clean_key in seen_company_keys:
+                    if not clean_key or clean_key in existing_names or is_unwanted_entity(comp_name):
                         continue
 
-                    await article.click()
-                    await page.wait_for_timeout(1800)
+                    await card.click()
+                    await asyncio.sleep(1.5)
 
-                    # Extract Phone Number
-                    phone = "N/A"
-                    phone_btn = page.locator('button[data-tooltip*="phone"], button[data-item-id*="phone"]')
-                    if await phone_btn.count():
-                        p_text = await phone_btn.first.inner_text()
-                        phone = re.sub(r'[^0-9+]', '', p_text)
-
-                    # Filter 2: Phone Number Deduplication
-                    if phone != "N/A" and phone in seen_phones:
-                        continue
-
-                    # Extract Website
-                    website = ""
-                    web_btn = page.locator('a[data-tooltip*="website"], a[data-item-id*="authority"]')
+                    website = None
+                    web_btn = page.locator('a[data-tooltip*="website"], a[data-item-id*="authority"]').first
                     if await web_btn.count():
-                        website = await web_btn.first.get_attribute('href') or ""
+                        website = await web_btn.get_attribute('href')
 
-                    # Extract Address
-                    address = "Indore, Madhya Pradesh"
-                    addr_btn = page.locator('button[data-tooltip*="address"], button[data-item-id*="address"]')
+                    # Priority 1: Google Search for Website if missing
+                    if not website:
+                        website = await search_website_on_google(context, comp_name)
+
+                    raw_phone = "N/A"
+                    
+                    # Priority 2: Extract Phone from Website
+                    if website:
+                        raw_phone = await scrape_phone_from_website(context, website)
+
+                    # Priority 3: Fallback to Maps Phone
+                    if raw_phone == "N/A":
+                        main_panel = page.locator('div[role="main"]').first
+                        panel_text = await main_panel.inner_text() if await main_panel.count() else ""
+                        phone_els = await page.locator('button[data-tooltip*="phone"], button[aria-label*="Phone"], button[data-item-id*="phone:"], a[href^="tel:"]').all()
+                        
+                        for p_el in phone_els:
+                            val = (await p_el.get_attribute("aria-label") or "") + " " + (await p_el.get_attribute("data-item-id") or "") + " " + (await p_el.inner_text() or "")
+                            match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', val)
+                            if match:
+                                raw_phone = match.group(0).strip()
+                                break
+
+                        if raw_phone == "N/A" and panel_text:
+                            match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', panel_text)
+                            if match:
+                                raw_phone = match.group(0).strip()
+
+                    formatted_phone, phone_type, is_wa, wa_link = classify_phone(raw_phone)
+
+                    if formatted_phone == "N/A":
+                        continue
+
+                    phone_digits = re.sub(r"\D", "", formatted_phone)
+                    if phone_digits in existing_phones:
+                        continue
+
+                    address = "Indore / Pithampur Zone"
+                    addr_btn = page.locator('button[data-item-id="address"]').first
                     if await addr_btn.count():
-                        address = await addr_btn.first.inner_text()
+                        address = (await addr_btn.inner_text()).replace('\n', ', ')
 
-                    phone_type = "Mobile" if phone.startswith("+919") or phone.startswith("+918") or phone.startswith("+917") or phone.startswith("+916") or (len(phone) == 10) else "Landline" if phone != "N/A" else "Missing"
+                    comb = (comp_name + " " + address + " " + query).lower()
+                    detected_city = "Pithampur" if "pithampur" in comb else ("Dewas" if "dewas" in comb else "Indore")
 
-                    lead_record = {
+                    lead_data = {
                         "company_name": comp_name,
-                        "phone": phone,
+                        "phone": formatted_phone,
                         "phone_type": phone_type,
-                        "is_whatsapp": phone_type == "Mobile",
-                        "website": website if website else None,
+                        "is_whatsapp": is_wa,
+                        "whatsapp_link": wa_link,
+                        "website": website,
                         "location": address,
-                        "city": "Indore",
-                        "category": "Plastic Moulding & Components",
-                        "industry": "Plastic & Polymer Industry",
-                        "gstin": generate_gstin()
+                        "city": detected_city,
+                        "category": category,
+                        "industry": INDUSTRY
                     }
 
-                    # Mark seen
-                    seen_company_keys.add(clean_key)
-                    if phone != "N/A":
-                        seen_phones.add(phone)
+                    supabase.table("active_leads").insert(lead_data).execute()
 
-                    extracted_leads.append(lead_record)
-                    print(f"✅ [{len(extracted_leads)}/{max_total}] Plastic Lead Added: {comp_name} | Phone: {phone}")
+                    existing_names.add(clean_key)
+                    existing_phones.add(phone_digits)
+                    inserted_leads_count += 1
 
-                    if len(extracted_leads) >= max_total:
-                        break
+                    print(f"🚀 [STORED #{inserted_leads_count}] {comp_name} | Phone: {formatted_phone} | Source: {'Website' if website else 'Maps'}")
 
                 except Exception:
                     continue
 
         await browser.close()
-
-    return extracted_leads
-
-
-# ==========================================
-# 3. RUNNER & SUPABASE UPSERT PUSH
-# ==========================================
-async def main():
-    # Target 100 Unique Indore Plastic Moulding Leads
-    leads = await scrape_plastic_leads(max_total=100)
-
-    print("\n" + "="*60)
-    print(f"📊 Total Unique Plastic Leads Extracted for Indore: {len(leads)}")
-
-    if leads:
-        print("⏳ Pushing Plastic Moulding Data directly into Supabase 'active_leads'...")
-        try:
-            res = supabase.table("active_leads").upsert(
-                leads, 
-                on_conflict="company_name, city, phone"
-            ).execute()
-            
-            print(f"🎉 SUCCESS! All {len(leads)} Plastic Moulding leads saved in Supabase!")
-        except Exception as err:
-            print(f"❌ Supabase Error: {err}")
-    else:
-        print("❌ No leads extracted.")
+        print(f"\n🎉 Finished! Successfully inserted {inserted_leads_count} Packaging & Plastics leads.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(scrape_all_leads())

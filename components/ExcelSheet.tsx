@@ -15,11 +15,13 @@ import {
   CheckCircle2,
   AlertTriangle,
   HelpCircle,
+  ChevronDown,
+  ChevronRight,
+  Building2,
+  Folder,
+  MapPin,
+  ExternalLink,
 } from "lucide-react";
-
-/* =========================================================
-   LEAD TYPE
-========================================================= */
 
 export interface Lead {
   id: string | number;
@@ -110,7 +112,7 @@ function classifyPhone(rawPhoneInput: string | undefined): ClassifiedPhone {
   return { displayPhone: rawPhone.startsWith("0") ? rawPhone : `0${core || digits}`, phoneType: "Landline", isWhatsapp: false, cleanMobileDigits: "", badgeText: "Landline" };
 }
 
-function normalizeCategoryKey(value: string): string {
+function normalizeKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
@@ -123,7 +125,22 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
   onToggleSelect,
   onToggleAll,
 }) => {
-  const [selectedCategoryKey, setSelectedCategoryKey] = useState<string>("ALL");
+  const [selectedFilterKey, setSelectedFilterKey] = useState<string>("ALL");
+  const [selectedFilterLabel, setSelectedFilterLabel] = useState<string>("All Loaded Leads");
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+  const [expandedIndustries, setExpandedIndustries] = useState<Record<string, boolean>>({});
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const inputLeads = useMemo(() => {
     if (Array.isArray(leads) && leads.length > 0) return leads;
@@ -142,7 +159,6 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
         const rawPhone = item.phone || "";
         const classified = classifyPhone(rawPhone);
 
-        // Direct reading from Supabase fields
         const rawIndustry = (item.industry || "N/A").trim();
         const rawCategory = (
           item.category ||
@@ -156,7 +172,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
         const gstStatus = hasGstin ? String(item.gstStatus || item.gstCheck || "UNVERIFIED") : "UNVERIFIED";
         const providedScore = Number(item.leadScore);
         const calculatedScore = Math.min(100,
-          10 + // named company record
+          10 +
           (classified.phoneType === "Mobile" ? 30 : 0) +
           (item.isWhatsapp || item.is_whatsapp ? 15 : 0) +
           (item.website ? 15 : 0) +
@@ -170,8 +186,9 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
           id: uniqueId,
           companyName: item.companyName || item.company_name || "N/A",
           industry: rawIndustry,
+          industryKey: normalizeKey(rawIndustry),
           category: rawCategory,
-          categoryKey: normalizeCategoryKey(rawCategory),
+          categoryKey: normalizeKey(rawCategory),
           location: item.location || item.city || "N/A",
           phone: classified.displayPhone,
           phoneType: classified.phoneType,
@@ -203,21 +220,54 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
 
   useEffect(() => {
     if (inputLeads.length !== previousLeadCount.current) {
-      setSelectedCategoryKey("ALL");
+      setSelectedFilterKey("ALL");
+      setSelectedFilterLabel("All Loaded Leads");
       previousLeadCount.current = inputLeads.length;
     }
   }, [inputLeads.length]);
 
-  const masterCategories = useMemo(() => {
-    const seen = new Map<string, string>();
+  const nestedStructure = useMemo(() => {
+    const map = new Map<string, {
+      industryLabel: string;
+      count: number;
+      subcategories: Map<string, { label: string; count: number }>;
+    }>();
+
     normalizedLeads.forEach((lead) => {
-      if (lead.categoryKey && lead.categoryKey !== "n/a" && !seen.has(lead.categoryKey)) {
-        seen.set(lead.categoryKey, lead.category);
+      const indKey = lead.industryKey;
+      if (!indKey || indKey === "n/a") return;
+
+      if (!map.has(indKey)) {
+        map.set(indKey, {
+          industryLabel: lead.industry,
+          count: 0,
+          subcategories: new Map(),
+        });
+      }
+
+      const indData = map.get(indKey)!;
+      indData.count += 1;
+
+      const catKey = lead.categoryKey;
+      if (catKey && catKey !== "n/a") {
+        const subMap = indData.subcategories;
+        if (!subMap.has(catKey)) {
+          subMap.set(catKey, { label: lead.category, count: 0 });
+        }
+        subMap.get(catKey)!.count += 1;
       }
     });
-    return Array.from(seen.entries())
-      .map(([key, label]) => ({ key, label }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+
+    return Array.from(map.entries()).map(([indKey, data]) => ({
+      indKey,
+      industryLabel: data.industryLabel,
+      count: data.count,
+      subcategories: Array.from(data.subcategories.entries()).map(([catKey, subData]) => ({
+        catKey,
+        label: subData.label,
+        count: subData.count,
+      })),
+    }));
   }, [normalizedLeads]);
 
   const filteredAndBalancedLeads = useMemo(() => {
@@ -225,13 +275,40 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
       ? normalizedLeads.filter((lead) => lead.isWhatsapp)
       : normalizedLeads;
 
-    if (selectedCategoryKey === "ALL") {
+    if (selectedFilterKey === "ALL") {
       return pool.slice(0, requestedLimit);
     }
-    return pool
-      .filter((lead) => lead.categoryKey === selectedCategoryKey)
-      .slice(0, requestedLimit);
-  }, [normalizedLeads, selectedCategoryKey, requestedLimit, hideLandlines]);
+
+    if (selectedFilterKey.startsWith("IND:")) {
+      const targetIndKey = selectedFilterKey.replace("IND:", "");
+      return pool
+        .filter((lead) => lead.industryKey === targetIndKey)
+        .slice(0, requestedLimit);
+    }
+
+    if (selectedFilterKey.startsWith("CAT:")) {
+      const targetCatKey = selectedFilterKey.replace("CAT:", "");
+      return pool
+        .filter((lead) => lead.categoryKey === targetCatKey)
+        .slice(0, requestedLimit);
+    }
+
+    return pool.slice(0, requestedLimit);
+  }, [normalizedLeads, selectedFilterKey, requestedLimit, hideLandlines]);
+
+  const toggleAccordion = (indKey: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedIndustries((prev) => ({
+      ...prev,
+      [indKey]: !prev[indKey],
+    }));
+  };
+
+  const handleSelectFilter = (key: string, label: string) => {
+    setSelectedFilterKey(key);
+    setSelectedFilterLabel(label);
+    setIsDropdownOpen(false);
+  };
 
   const handleWhatsAppClick = (cleanDigits: string, companyName: string) => {
     if (!cleanDigits) return;
@@ -242,28 +319,192 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
   const isAllSelected = filteredAndBalancedLeads.length > 0 && filteredAndBalancedLeads.every((lead) => lead.selected);
 
   return (
-    <div className="w-full space-y-2">
-      <div className="flex items-center justify-between bg-white p-2 rounded border border-slate-300 shadow-2xs">
-        <div className="flex items-center gap-2">
-          <Filter className="w-3.5 h-3.5 text-slate-500" />
-          <span className="text-xs font-semibold text-slate-600">Filter Category:</span>
-          <select
-            value={selectedCategoryKey}
-            onChange={(e) => setSelectedCategoryKey(e.target.value)}
-            className="text-xs border border-slate-300 rounded px-2 py-1 bg-slate-50 text-slate-800 font-medium focus:outline-none focus:border-emerald-500 cursor-pointer max-w-xs"
-          >
-            <option value="ALL">All Categories ({normalizedLeads.length})</option>
-            {masterCategories.map(({ key, label }) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </select>
+    <div className="w-full space-y-3">
+      {/* FILTER BAR (Dropdown Selector) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white p-2.5 rounded-lg border border-slate-300 shadow-2xs gap-2">
+        <div className="flex items-center gap-2 relative w-full sm:w-auto" ref={dropdownRef}>
+          <Filter className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+          <span className="text-xs font-semibold text-slate-600 shrink-0">Filter View:</span>
+
+          <div className="relative flex-1 sm:flex-initial">
+            <button
+              type="button"
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              className="text-xs w-full border border-slate-300 rounded px-2.5 py-1.5 bg-slate-50 text-slate-800 font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer flex items-center justify-between gap-3 min-w-[240px] sm:min-w-[280px] shadow-2xs hover:bg-slate-100 transition-colors"
+            >
+              <span className="truncate">{selectedFilterLabel} ({filteredAndBalancedLeads.length})</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            </button>
+
+            {isDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1 w-full sm:w-80 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1.5 max-h-80 overflow-y-auto text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleSelectFilter("ALL", "All Loaded Leads")}
+                  className={`w-full text-left px-3 py-2 font-bold hover:bg-slate-100 flex items-center justify-between border-b border-slate-100 ${
+                    selectedFilterKey === "ALL" ? "text-emerald-700 bg-emerald-50/60" : "text-slate-800"
+                  }`}
+                >
+                  <span>All Loaded Leads</span>
+                  <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded text-slate-600 font-semibold">{normalizedLeads.length}</span>
+                </button>
+
+                <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/80">
+                  Main Industries & Sub-Categories
+                </div>
+
+                {nestedStructure.map(({ indKey, industryLabel, count, subcategories }) => {
+                  const isExpanded = !!expandedIndustries[indKey];
+                  const indFilterKey = `IND:${indKey}`;
+                  const isSelected = selectedFilterKey === indFilterKey;
+
+                  return (
+                    <div key={indKey} className="border-b border-slate-50 last:border-0">
+                      <div
+                        className={`flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors cursor-pointer ${
+                          isSelected ? "bg-emerald-50/80 text-emerald-800 font-bold" : "text-slate-700 font-semibold"
+                        }`}
+                        onClick={() => handleSelectFilter(indFilterKey, `Industry: ${industryLabel}`)}
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Building2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <span className="truncate">{industryLabel}</span>
+                          <span className="text-[10px] font-normal text-slate-500">({count})</span>
+                        </div>
+
+                        {subcategories.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => toggleAccordion(indKey, e)}
+                            className="p-1 hover:bg-slate-200 rounded text-slate-500 shrink-0 ml-1 cursor-pointer"
+                            title="Toggle Sub-categories"
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                            ) : (
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+
+                      {isExpanded && subcategories.length > 0 && (
+                        <div className="bg-slate-50/70 border-l-2 border-indigo-400 pl-2 py-0.5 ml-3 my-0.5 space-y-0.5">
+                          {subcategories.map(({ catKey, label, count: subCount }) => {
+                            const catFilterKey = `CAT:${catKey}`;
+                            const isSubSelected = selectedFilterKey === catFilterKey;
+
+                            return (
+                              <button
+                                key={catKey}
+                                type="button"
+                                onClick={() => handleSelectFilter(catFilterKey, `Category: ${label}`)}
+                                className={`w-full text-left px-2 py-1 text-[11px] hover:bg-indigo-50 rounded flex items-center justify-between transition-colors ${
+                                  isSubSelected ? "text-indigo-700 font-bold bg-indigo-100/60" : "text-slate-600 font-normal"
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <Folder className="w-3 h-3 text-slate-400 shrink-0" />
+                                  <span className="truncate">{label}</span>
+                                </div>
+                                <span className="text-[9px] text-slate-400 font-mono">({subCount})</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium">
-          <div>Showing <span className="font-bold text-slate-700">{filteredAndBalancedLeads.length}</span> of {normalizedLeads.length} leads</div>
+
+        <div className="text-[11px] text-slate-500 font-medium">
+          Showing <span className="font-bold text-slate-700">{filteredAndBalancedLeads.length}</span> of {normalizedLeads.length} leads
         </div>
       </div>
 
-      <div className="w-full overflow-x-auto bg-white rounded border border-slate-300 shadow-2xs">
+      {/* 📱 MOBILE VIEW: COMPACT INTERACTIVE LEAD CARDS (< 768px) */}
+      <div className="block md:hidden space-y-2.5">
+        {filteredAndBalancedLeads.length > 0 ? (
+          filteredAndBalancedLeads.map((lead) => (
+            <div
+              key={lead.id}
+              className={`p-3.5 rounded-xl border bg-white shadow-2xs space-y-2 transition-all ${
+                lead.selected ? "border-emerald-500 bg-emerald-50/30" : "border-slate-200"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={!!lead.selected}
+                    onChange={() => onToggleSelect?.(lead.id)}
+                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 cursor-pointer"
+                  />
+                  <h3 className="font-bold text-slate-900 text-xs leading-tight">{lead.companyName}</h3>
+                </div>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 ${
+                  lead.leadTier === "A" ? "bg-emerald-100 text-emerald-700" : lead.leadTier === "B" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"
+                }`}>
+                  Tier {lead.leadTier}
+                </span>
+              </div>
+
+              <div className="text-[10px] space-y-1 text-slate-600">
+                <div className="text-indigo-700 font-semibold">{lead.industry} · <span className="text-slate-500 font-normal">{lead.category}</span></div>
+                <div className="flex items-center gap-1 text-slate-500 truncate">
+                  <MapPin className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{lead.location}</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                <div className="font-mono text-xs font-semibold text-slate-800">
+                  {lead.phone}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {lead.website && (
+                    <a
+                      href={lead.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+                      title="Visit Website"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                  {lead.isWhatsapp ? (
+                    <button
+                      onClick={() => handleWhatsAppClick(lead.cleanMobileDigits, lead.companyName)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-white shadow-xs hover:bg-emerald-600 active:scale-95 transition-all"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 fill-white text-white" /> WhatsApp
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">
+                      Landline
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="p-8 text-center text-slate-500 bg-amber-50/40 rounded-xl border border-amber-200">
+            <AlertTriangle className="w-6 h-6 text-amber-500 mx-auto mb-1" />
+            <span className="font-semibold text-slate-700 text-xs block">No leads found!</span>
+            <span className="text-[11px] text-slate-500">Kripya Search & Filter karein.</span>
+          </div>
+        )}
+      </div>
+
+      {/* 💻 DESKTOP VIEW: SPREADSHEET TABLE (≥ 768px) */}
+      <div className="hidden md:block w-full overflow-x-auto bg-white rounded border border-slate-300 shadow-2xs">
         <table className="w-full text-left border-collapse text-[11px] font-sans border-spacing-0 table-fixed">
           <thead>
             <tr className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] tracking-tight h-7 border-b border-slate-300">

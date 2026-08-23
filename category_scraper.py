@@ -2,7 +2,6 @@ import asyncio
 import os
 import re
 import sys
-import random
 from pathlib import Path
 from urllib.parse import quote
 from dotenv import load_dotenv
@@ -10,7 +9,7 @@ from playwright.async_api import async_playwright
 from supabase import create_client, Client
 
 # ==========================================
-# 1. SETUP & SUPABASE INITIALIZATION
+# 1. SETUP & DB CACHE
 # ==========================================
 BASE_DIR = Path(__file__).resolve().parent
 ENV_FILE = BASE_DIR / ".env.local" if (BASE_DIR / ".env.local").exists() else BASE_DIR / ".env"
@@ -24,45 +23,36 @@ load_dotenv(dotenv_path=ENV_FILE, override=True)
 SUPABASE_URL = (os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL") or "").strip()
 SUPABASE_KEY = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY") or "").strip()
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("❌ Error: Supabase URL ya API Key missing hai!")
-    sys.exit(1)
-
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ==========================================
-# 2. PACKAGING & PLASTICS TARGET QUERIES
-# ==========================================
-INDUSTRY = "Packaging, Plastics & Paper Manufacturing"
+INDUSTRY = "Automobile & Auto Components"
 TARGET_NEW_LEADS = 50
 
-PACKAGING_QUERIES = [
-    # Pithampur Industrial Belt
-    {"query": "Corrugated box manufacturers Pithampur Sector 1", "category": "Paper & Corrugated Packaging"},
-    {"query": "HDPE bottle plastic moulding factory Pithampur Sector 3", "category": "Plastic Packaging & Bottles"},
-    {"query": "Flexible packaging polybag manufacturers Pithampur SEZ", "category": "Flexible Packaging"},
-    {"query": "Pharma packaging aluminium foil factory Pithampur", "category": "Pharma & Special Packaging"},
-    {"query": "Pet bottle blow moulding plant Pithampur Kheda", "category": "Plastic Packaging & Bottles"},
-
-    # Indore Industrial Zones (Sanwer Road, Palda, Polo Ground)
-    {"query": "Corrugated box manufacturing unit Sanwer Road Indore", "category": "Paper & Corrugated Packaging"},
-    {"query": "Plastic injection moulding factory Sanwer Road Sector B Indore", "category": "Plastic Packaging & Bottles"},
-    {"query": "Printed carton box manufacturer Palda Indore", "category": "Paper & Corrugated Packaging"},
-    {"query": "Flexible packaging pouch manufacturer Polo Ground Indore", "category": "Flexible Packaging"},
-    {"query": "HDPE container factory Laxmibai Nagar Indore", "category": "Plastic Packaging & Bottles"},
-    {"query": "Industrial packaging material suppliers Rau Pigdamber Indore", "category": "Industrial Packaging"},
-
-    # Dewas & Extended Belts
-    {"query": "Corrugated packaging factory Dewas Industrial Area", "category": "Paper & Corrugated Packaging"},
-    {"query": "Plastic container packaging plant Dewas", "category": "Plastic Packaging & Bottles"}
+COMBINED_QUERIES = [
+    {"query": "Auto components manufacturers Pithampur Industrial Area", "category": "Auto Components"},
+    {"query": "Forging plant Sanwer Road Sector A Indore", "category": "Forging & Casting"},
+    {"query": "Precision machining unit Pithampur Sector 3", "category": "Auto Components"},
+    {"query": "Automobile spare parts factory Dewas Industrial Area", "category": "Auto Components"},
+    {"query": "Gears and shafts manufacturer Sanwer Road Indore", "category": "Auto Components"},
+    {"query": "Aluminum die casting unit Pithampur Sector 1", "category": "Forging & Casting"},
+    {"query": "Sheet metal components factory Sanwer Road Sector E Indore", "category": "Auto Components"},
+    {"query": "Auto electrical components manufacturer Pithampur", "category": "Auto Components"},
+    {"query": "Automotive rubber parts manufacturer Indore", "category": "Auto Components"},
+    {"query": "CNC machining job work Pithampur Kheda", "category": "Precision Machining"},
+    {"query": "Springs manufacturer automobile Sanwer Road Indore", "category": "Auto Components"},
+    {"query": "Tractor parts manufacturing plant Pithampur Sector 2", "category": "Auto Components"},
+    {"query": "Auto ancillary industries Dewas Sector 1", "category": "Auto Components"},
+    {"query": "Automotive fasteners factory Sanwer Road Indore", "category": "Auto Components"},
+    {"query": "Clutch and brake lining manufacturer Pithampur", "category": "Auto Components"},
+    {"query": "Heavy vehicle components factory Rau Indore", "category": "Auto Components"},
+    {"query": "Automotive stamping unit Sanwer Road Indore", "category": "Auto Components"},
+    {"query": "Engine valves manufacturer Pithampur Industrial Belt", "category": "Auto Components"}
 ]
 
-random.shuffle(PACKAGING_QUERIES)
-
 STRICT_REJECTS = [
-    "medical store", "chemist shop", "hospital", "clinic", "pathology", 
-    "diagnostic", "dawa bazar", "retail store", "grocery", "stationery",
-    "institute", "college", "university", "school", "coaching"
+    "car wash", "auto garage", "bike repair", "car accessories", "helmet shop", 
+    "tyre shop", "battery dealer", "service center", "car decor", "auto spare parts shop",
+    "retail store", "showroom", "second hand car", "dawa bazar"
 ]
 
 def normalize_name(name: str) -> str:
@@ -102,10 +92,47 @@ def fetch_existing_cache():
         print(f"⚠️ Cache Load Exception: {e}")
         return set(), set()
 
+async def search_website_on_google(context, comp_name: str) -> str:
+    search_tab = await context.new_page()
+    website_url = None
+    try:
+        query = f"{comp_name} official website Indore"
+        await search_tab.goto(f"https://www.google.com/search?q={quote(query)}", wait_until="domcontentloaded", timeout=10000)
+        
+        links = await search_tab.locator('div.g a[href^="http"]').all()
+        for link in links:
+            href = await link.get_attribute("href")
+            if href and not any(ignored in href for ignored in ["google.com", "facebook.com", "instagram.com", "indiamart.com", "justdial.com"]):
+                website_url = href
+                break
+    except Exception:
+        pass
+    finally:
+        await search_tab.close()
+    return website_url
+
+async def scrape_phone_from_website(context, website_url: str) -> str:
+    if not website_url:
+        return "N/A"
+    
+    site_tab = await context.new_page()
+    found_phone = "N/A"
+    try:
+        await site_tab.goto(website_url, wait_until="domcontentloaded", timeout=8000)
+        site_text = (await site_tab.locator("body").inner_text())[:15000]
+        match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', site_text)
+        if match:
+            found_phone = match.group(0).strip()
+    except Exception:
+        pass
+    finally:
+        await site_tab.close()
+    return found_phone
+
 # ==========================================
-# 3. SCRAPING ENGINE
+# 2. SCRAPING ENGINE (Website Priority)
 # ==========================================
-async def scrape_packaging_leads():
+async def scrape_all_leads():
     existing_names, existing_phones = fetch_existing_cache()
     print(f"📦 Cached Existing Records: {len(existing_names)} Companies | {len(existing_phones)} Phones\n")
     
@@ -123,29 +150,27 @@ async def scrape_packaging_leads():
         
         page = await context.new_page()
 
-        for q_data in PACKAGING_QUERIES:
+        for q_data in COMBINED_QUERIES:
             if inserted_leads_count >= TARGET_NEW_LEADS:
                 break
 
             query = q_data["query"]
             category = q_data["category"]
-            print(f"🔎 [SEARCHING PACKAGING] '{query}'")
+            print(f"🔎 [SEARCHING] '{query}'")
 
             try:
                 await page.goto(f"https://www.google.com/maps/search/{quote(query)}", wait_until="domcontentloaded", timeout=25000)
                 await page.wait_for_selector('div[role="feed"]', timeout=15000)
             except Exception:
-                print("    ⏩ Timeout loading feed, skipping...\n")
                 continue
 
             sidebar = page.locator('div[role="feed"]')
             if await sidebar.count() > 0:
-                for _ in range(15):
+                for _ in range(12):
                     await sidebar.evaluate("el => el.scrollBy(0, 2000)")
                     await asyncio.sleep(0.4)
 
             cards = await page.locator('div[role="article"]').all()
-            print(f"   Found {len(cards)} listings on page.")
 
             for card in cards:
                 if inserted_leads_count >= TARGET_NEW_LEADS:
@@ -156,66 +181,55 @@ async def scrape_packaging_leads():
                     comp_name = (await name_el.inner_text()).strip() if await name_el.count() else await card.get_attribute("aria-label") or ""
                     clean_key = normalize_name(comp_name)
 
-                    if not clean_key or clean_key in existing_names:
-                        continue
-
-                    if is_unwanted_entity(comp_name):
-                        print(f"    ❌ [SKIP UNWANTED] {comp_name}")
+                    if not clean_key or clean_key in existing_names or is_unwanted_entity(comp_name):
                         continue
 
                     await card.click()
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(1.5)
 
-                    main_panel = page.locator('div[role="main"]').first
-                    panel_text = await main_panel.inner_text() if await main_panel.count() else ""
-
-                    # Extract Phone
-                    raw_phone = "N/A"
-                    phone_els = await page.locator('button[data-tooltip*="phone"], button[aria-label*="Phone"], button[data-item-id*="phone:"], a[href^="tel:"]').all()
-                    
-                    for p_el in phone_els:
-                        val = (await p_el.get_attribute("aria-label") or "") + " " + (await p_el.get_attribute("data-item-id") or "") + " " + (await p_el.inner_text() or "")
-                        match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', val)
-                        if match:
-                            raw_phone = match.group(0).strip()
-                            break
-
-                    if raw_phone == "N/A" and panel_text:
-                        match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', panel_text)
-                        if match:
-                            raw_phone = match.group(0).strip()
-
-                    # Website
                     website = None
                     web_btn = page.locator('a[data-tooltip*="website"], a[data-item-id*="authority"]').first
                     if await web_btn.count():
                         website = await web_btn.get_attribute('href')
 
-                    if raw_phone == "N/A" and website:
-                        site_tab = await context.new_page()
-                        try:
-                            await site_tab.goto(website, wait_until="domcontentloaded", timeout=4500)
-                            site_text = (await site_tab.locator("body").inner_text())[:15000]
-                            match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', site_text)
+                    # Priority 1: Google Search Fallback for Website
+                    if not website:
+                        website = await search_website_on_google(context, comp_name)
+
+                    raw_phone = "N/A"
+                    
+                    # Priority 2: Extract Phone from Website
+                    if website:
+                        raw_phone = await scrape_phone_from_website(context, website)
+
+                    # Priority 3: Fallback to Maps Phone
+                    if raw_phone == "N/A":
+                        main_panel = page.locator('div[role="main"]').first
+                        panel_text = await main_panel.inner_text() if await main_panel.count() else ""
+                        phone_els = await page.locator('button[data-tooltip*="phone"], button[aria-label*="Phone"], button[data-item-id*="phone:"], a[href^="tel:"]').all()
+                        
+                        for p_el in phone_els:
+                            val = (await p_el.get_attribute("aria-label") or "") + " " + (await p_el.get_attribute("data-item-id") or "") + " " + (await p_el.inner_text() or "")
+                            match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', val)
                             if match:
                                 raw_phone = match.group(0).strip()
-                        except Exception:
-                            pass
-                        finally:
-                            await site_tab.close()
+                                break
+
+                        if raw_phone == "N/A" and panel_text:
+                            match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', panel_text)
+                            if match:
+                                raw_phone = match.group(0).strip()
 
                     formatted_phone, phone_type, is_wa, wa_link = classify_phone(raw_phone)
 
                     if formatted_phone == "N/A":
-                        print(f"    ❌ [NO PHONE] {comp_name}")
                         continue
 
                     phone_digits = re.sub(r"\D", "", formatted_phone)
                     if phone_digits in existing_phones:
-                        print(f"    ⏩ [SKIP DUPLICATE PHONE] {comp_name}")
                         continue
 
-                    address = "Indore / Pithampur Packaging Belt"
+                    address = "Indore / Pithampur Zone"
                     addr_btn = page.locator('button[data-item-id="address"]').first
                     if await addr_btn.count():
                         address = (await addr_btn.inner_text()).replace('\n', ', ')
@@ -242,20 +256,13 @@ async def scrape_packaging_leads():
                     existing_phones.add(phone_digits)
                     inserted_leads_count += 1
 
-                    print("\n" + "=" * 60)
-                    print(f"🚀 [PACKAGING STORED #{inserted_leads_count}] {comp_name}")
-                    print(f"📞 Contact  : {formatted_phone} ({phone_type})")
-                    print(f"💬 WhatsApp : {'Yes (' + wa_link + ')' if is_wa else 'No'}")
-                    print(f"🌐 Website  : {website or 'N/A'}")
-                    print(f"📍 City     : {detected_city}")
-                    print("=" * 60 + "\n")
+                    print(f"🚀 [STORED #{inserted_leads_count}] {comp_name} | Phone: {formatted_phone} | Source: {'Website' if website else 'Maps'}")
 
                 except Exception:
                     continue
 
         await browser.close()
-
-    print(f"\n🎉 Packaging Scrape Complete! Total {inserted_leads_count} unique leads inserted.")
+        print(f"\n🎉 Finished! Successfully inserted {inserted_leads_count} Auto Components leads.")
 
 if __name__ == "__main__":
-    asyncio.run(scrape_packaging_leads())
+    asyncio.run(scrape_all_leads())

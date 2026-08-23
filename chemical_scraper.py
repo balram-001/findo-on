@@ -2,7 +2,6 @@ import asyncio
 import os
 import re
 import sys
-import random
 from pathlib import Path
 from urllib.parse import quote
 from dotenv import load_dotenv
@@ -29,7 +28,6 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 INDUSTRY = "Chemical Manufacturing & Allied Industries"
 TARGET_NEW_LEADS = 50
 
-# Unexplored & Specific Chemical Micro-Queries
 COMBINED_QUERIES = [
     {"query": "Specialty chemical manufacturers Sanwer Road Indore", "category": "Specialty Chemicals"},
     {"query": "Industrial solvent suppliers Palda Indore", "category": "Specialty Chemicals"},
@@ -44,10 +42,17 @@ COMBINED_QUERIES = [
     {"query": "Sodium silicate manufacturer Sanwer Road Indore", "category": "Specialty Chemicals"},
     {"query": "Acid slurry suppliers Palda Industrial Area Indore", "category": "Detergent & Soap Chemicals"},
     {"query": "Industrial gas plant Pithampur Sector 2", "category": "Industrial Chemicals"},
-    {"query": "Fine chemicals manufacturer Rau Pigdamber Indore", "category": "Specialty Chemicals"}
+    {"query": "Fine chemicals manufacturer Rau Pigdamber Indore", "category": "Specialty Chemicals"},
+    {"query": "Rubber chemical manufacturers Pithampur Sector 1", "category": "Industrial Chemicals"},
+    {"query": "Construction chemicals manufacturer Indore", "category": "Specialty Chemicals"},
+    {"query": "Textile auxiliary chemicals Sanwer Road Indore", "category": "Industrial Chemicals"},
+    {"query": "Electroplating chemicals supplier Indore", "category": "Industrial Chemicals"},
+    {"query": "Petrochemical suppliers Pithampur", "category": "Specialty Chemicals"},
+    {"query": "Laboratory chemical suppliers Indore", "category": "Specialty Chemicals"},
+    {"query": "Organic chemical plant Dewas Road Indore", "category": "Industrial Chemicals"},
+    {"query": "Inorganic chemical manufacturers Pithampur", "category": "Industrial Chemicals"}
 ]
 
-# Strict Rejects (Academic & Pure B2C Retail)
 STRICT_REJECTS = [
     "medical store", "chemist shop", "hospital", "clinic", "pathology", 
     "diagnostic", "dawa bazar", "retail store", "grocery", "stationery",
@@ -91,8 +96,48 @@ def fetch_existing_cache():
         print(f"⚠️ Cache Load Exception: {e}")
         return set(), set()
 
+# Helper function: Google Web Search for missing website
+async def search_website_on_google(context, comp_name: str) -> str:
+    search_tab = await context.new_page()
+    website_url = None
+    try:
+        query = f"{comp_name} official website Indore"
+        await search_tab.goto(f"https://www.google.com/search?q={quote(query)}", wait_until="domcontentloaded", timeout=10000)
+        
+        # Pick first non-google organic search result
+        links = await search_tab.locator('div.g a[href^="http"]').all()
+        for link in links:
+            href = await link.get_attribute("href")
+            if href and not any(ignored in href for ignored in ["google.com", "facebook.com", "instagram.com", "indiamart.com", "justdial.com"]):
+                website_url = href
+                break
+    except Exception:
+        pass
+    finally:
+        await search_tab.close()
+    return website_url
+
+# Helper function: Extract phone from Website
+async def scrape_phone_from_website(context, website_url: str) -> str:
+    if not website_url:
+        return "N/A"
+    
+    site_tab = await context.new_page()
+    found_phone = "N/A"
+    try:
+        await site_tab.goto(website_url, wait_until="domcontentloaded", timeout=8000)
+        site_text = (await site_tab.locator("body").inner_text())[:15000]
+        match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', site_text)
+        if match:
+            found_phone = match.group(0).strip()
+    except Exception:
+        pass
+    finally:
+        await site_tab.close()
+    return found_phone
+
 # ==========================================
-# 2. SCRAPING ENGINE
+# 2. SCRAPING ENGINE (Website Priority)
 # ==========================================
 async def scrape_all_leads():
     existing_names, existing_phones = fetch_existing_cache()
@@ -124,17 +169,15 @@ async def scrape_all_leads():
                 await page.goto(f"https://www.google.com/maps/search/{quote(query)}", wait_until="domcontentloaded", timeout=25000)
                 await page.wait_for_selector('div[role="feed"]', timeout=15000)
             except Exception:
-                print("    ⏩ Timeout loading feed, skipping...\n")
                 continue
 
             sidebar = page.locator('div[role="feed"]')
             if await sidebar.count() > 0:
-                for _ in range(15):
+                for _ in range(10):
                     await sidebar.evaluate("el => el.scrollBy(0, 2000)")
                     await asyncio.sleep(0.4)
 
             cards = await page.locator('div[role="article"]').all()
-            print(f"   Found {len(cards)} listings on page.")
 
             for card in cards:
                 if inserted_leads_count >= TARGET_NEW_LEADS:
@@ -145,64 +188,53 @@ async def scrape_all_leads():
                     comp_name = (await name_el.inner_text()).strip() if await name_el.count() else await card.get_attribute("aria-label") or ""
                     clean_key = normalize_name(comp_name)
 
-                    if not clean_key or clean_key in existing_names:
-                        continue
-
-                    # Filter out Academic & Explicit B2C Retail before clicking
-                    if is_unwanted_entity(comp_name):
-                        print(f"    ❌ [SKIP UNWANTED/RETAIL] {comp_name}")
+                    if not clean_key or clean_key in existing_names or is_unwanted_entity(comp_name):
                         continue
 
                     await card.click()
-                    await asyncio.sleep(2.0)  # Wait for Google Maps XHR phone details to render
+                    await asyncio.sleep(1.5)
 
-                    main_panel = page.locator('div[role="main"]').first
-                    panel_text = await main_panel.inner_text() if await main_panel.count() else ""
-
-                    # Phone extraction: Check ARIA labels, attributes, and text
-                    raw_phone = "N/A"
-                    phone_els = await page.locator('button[data-tooltip*="phone"], button[aria-label*="Phone"], button[data-item-id*="phone:"], a[href^="tel:"]').all()
-                    
-                    for p_el in phone_els:
-                        val = (await p_el.get_attribute("aria-label") or "") + " " + (await p_el.get_attribute("data-item-id") or "") + " " + (await p_el.inner_text() or "")
-                        match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', val)
-                        if match:
-                            raw_phone = match.group(0).strip()
-                            break
-
-                    if raw_phone == "N/A" and panel_text:
-                        match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', panel_text)
-                        if match:
-                            raw_phone = match.group(0).strip()
-
-                    # Website fallback
+                    # Extract website button from Maps
                     website = None
                     web_btn = page.locator('a[data-tooltip*="website"], a[data-item-id*="authority"]').first
                     if await web_btn.count():
                         website = await web_btn.get_attribute('href')
 
-                    if raw_phone == "N/A" and website:
-                        site_tab = await context.new_page()
-                        try:
-                            await site_tab.goto(website, wait_until="domcontentloaded", timeout=4500)
-                            site_text = (await site_tab.locator("body").inner_text())[:15000]
-                            match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', site_text)
+                    # 💡 PRIORITY 1: Website Search (Google Search Fallback if website not on Maps)
+                    if not website:
+                        website = await search_website_on_google(context, comp_name)
+
+                    raw_phone = "N/A"
+                    
+                    # 💡 PRIORITY 2: Scrape phone from Website
+                    if website:
+                        raw_phone = await scrape_phone_from_website(context, website)
+
+                    # 💡 PRIORITY 3: Fallback to Google Maps Phone if Website Phone is N/A
+                    if raw_phone == "N/A":
+                        main_panel = page.locator('div[role="main"]').first
+                        panel_text = await main_panel.inner_text() if await main_panel.count() else ""
+                        phone_els = await page.locator('button[data-tooltip*="phone"], button[aria-label*="Phone"], button[data-item-id*="phone:"], a[href^="tel:"]').all()
+                        
+                        for p_el in phone_els:
+                            val = (await p_el.get_attribute("aria-label") or "") + " " + (await p_el.get_attribute("data-item-id") or "") + " " + (await p_el.inner_text() or "")
+                            match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', val)
                             if match:
                                 raw_phone = match.group(0).strip()
-                        except Exception:
-                            pass
-                        finally:
-                            await site_tab.close()
+                                break
+
+                        if raw_phone == "N/A" and panel_text:
+                            match = re.search(r'(?:\+91[\s-]?)?[6-9]\d{9}|0\d{2,4}[\s-]?\d{6,8}', panel_text)
+                            if match:
+                                raw_phone = match.group(0).strip()
 
                     formatted_phone, phone_type, is_wa, wa_link = classify_phone(raw_phone)
 
                     if formatted_phone == "N/A":
-                        print(f"    ❌ [NO PHONE NUMBER] {comp_name}")
                         continue
 
                     phone_digits = re.sub(r"\D", "", formatted_phone)
                     if phone_digits in existing_phones:
-                        print(f"    ⏩ [SKIP DUPLICATE PHONE] {comp_name}")
                         continue
 
                     address = "Indore / Pithampur Zone"
@@ -232,20 +264,12 @@ async def scrape_all_leads():
                     existing_phones.add(phone_digits)
                     inserted_leads_count += 1
 
-                    print("\n" + "=" * 60)
-                    print(f"🚀 [STORED #{inserted_leads_count}] {comp_name}")
-                    print(f"📞 Contact  : {formatted_phone} ({phone_type})")
-                    print(f"💬 WhatsApp : {'Yes (' + wa_link + ')' if is_wa else 'No'}")
-                    print(f"🌐 Website  : {website or 'N/A'}")
-                    print(f"📍 City     : {detected_city}")
-                    print("=" * 60 + "\n")
+                    print(f"🚀 [STORED #{inserted_leads_count}] {comp_name} | Phone: {formatted_phone} | Source: {'Website' if website else 'Maps'}")
 
                 except Exception:
                     continue
 
         await browser.close()
-
-    print(f"\n🎉 Process Finished! Total {inserted_leads_count} unique leads inserted.")
 
 if __name__ == "__main__":
     asyncio.run(scrape_all_leads())

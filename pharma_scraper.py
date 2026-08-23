@@ -25,35 +25,33 @@ SUPABASE_KEY = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KE
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-INDUSTRY = "Food Processing & Agro Manufacturing"
+INDUSTRY = "Pharmaceuticals & Healthcare Manufacturing"
 TARGET_NEW_LEADS = 50
 
-# Target B2B Manufacturing Micro-Queries
+# Targeted B2B Manufacturing Micro-Queries
 COMBINED_QUERIES = [
-    {"query": "Soya oil extraction plant Pithampur Industrial Area", "category": "Edible Oil Processing"},
-    {"query": "Flour mill manufacturing plant Sanwer Road Indore", "category": "Grain Processing"},
-    {"query": "Spices manufacturing unit Palda Industrial Area Indore", "category": "Spices & Food Processing"},
-    {"query": "Poha manufacturing plant Rau Indore", "category": "Grain Processing"},
-    {"query": "Snacks manufacturing factory Sanwer Road Sector A Indore", "category": "Food Processing"},
-    {"query": "Bakery manufacturing unit Pithampur Sector 3", "category": "Food Processing"},
-    {"query": "Confectionery factory Sanwer Road Indore", "category": "Food Processing"},
-    {"query": "Cold storage and agro processing Dewas Industrial Area", "category": "Agro Processing"},
-    {"query": "Pulse processing mill Palda Indore", "category": "Grain Processing"},
-    {"query": "Frozen food processing unit Pithampur", "category": "Food Processing"},
-    {"query": "Dairy processing plant Sanwer Road Indore", "category": "Dairy Processing"},
-    {"query": "Dehydrated onion garlic plant Pithampur Sector 1", "category": "Agro Processing"},
-    {"query": "Edible oil refinery Dewas Sector 1", "category": "Edible Oil Processing"},
-    {"query": "Animal feed manufacturing plant Sanwer Road Indore", "category": "Agro Processing"},
-    {"query": "Food ingredients and additives plant Pithampur", "category": "Food Processing"},
-    {"query": "Rice mill agro processing Rau Indore", "category": "Grain Processing"},
-    {"query": "Fruit pulp processing unit Dewas Road Indore", "category": "Food Processing"},
-    {"query": "Soya lecithin manufacturing plant Pithampur", "category": "Agro Processing"}
+    {"query": "Pharma manufacturing plant Pithampur Special Economic Zone", "category": "Pharma Manufacturing"},
+    {"query": "Pharmaceutical formulations factory Sanwer Road Indore", "category": "Pharma Formulations"},
+    {"query": "API active pharmaceutical ingredients manufacturer Pithampur", "category": "API Manufacturing"},
+    {"query": "Medicine manufacturing unit Dewas Industrial Area", "category": "Pharma Manufacturing"},
+    {"query": "Ayurvedic medicine manufacturing plant Indore", "category": "Ayurveda & Herbal Manufacturing"},
+    {"query": "Injectable pharma plant Pithampur Sector 3", "category": "Pharma Formulations"},
+    {"query": "Nutraceuticals manufacturing factory Sanwer Road Indore", "category": "Nutraceuticals"},
+    {"query": "Surgical equipment manufacturers Pithampur", "category": "Medical Equipment Manufacturing"},
+    {"query": "Pharma packaging material factory Sanwer Road Indore", "category": "Pharma Packaging"},
+    {"query": "Herbal extracts manufacturer Dewas Road Indore", "category": "Ayurveda & Herbal Manufacturing"},
+    {"query": "Capsule and tablet manufacturer Pithampur Sector 1", "category": "Pharma Formulations"},
+    {"query": "Medical devices manufacturing plant Rau Indore", "category": "Medical Equipment Manufacturing"},
+    {"query": "Pharma raw material supplier Palda Indore", "category": "API Manufacturing"},
+    {"query": "Ointment and syrup manufacturing plant Sanwer Road Indore", "category": "Pharma Formulations"},
+    {"query": "Diagnostic kit manufacturer Pithampur", "category": "Medical Equipment Manufacturing"}
 ]
 
-# Strict Rejects (Filter out B2C grocery shops, restaurants, sweet shops)
+# Strict Rejects (Filter out B2C chemist shops, hospitals, clinics)
 STRICT_REJECTS = [
-    "grocery store", "kirana shop", "restaurant", "hotel", "cafe", "sweet shop", 
-    "bakery shop", "dawa bazar", "retail store", "supermarket", "fast food"
+    "chemist shop", "medical store", "pharmacy store", "hospital", "clinic", 
+    "pathology", "diagnostic center", "dawa bazar", "doctor", "nursing home", 
+    "retail store", "grocery", "coaching", "tuition"
 ]
 
 def normalize_name(name: str) -> str:
@@ -265,7 +263,7 @@ async def scrape_all_leads():
                     continue
 
         await browser.close()
-        print(f"\n🎉 Finished! Successfully inserted {inserted_leads_count} Food & Agro leads.")
+        print(f"\n🎉 Finished! Successfully inserted {inserted_leads_count} Pharma Manufacturing leads.")
 
 if __name__ == "__main__":
     asyncio.run(scrape_all_leads())
