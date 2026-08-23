@@ -90,7 +90,14 @@ export default function DashboardPage() {
       });
 
       const data = await res.json();
-      const fetchedData = data.success && Array.isArray(data.data) ? data.data : [];
+
+      if (!data.success) {
+        setLeads([]);
+        alert(`API Error: ${data.error || "Failed to fetch data"}`);
+        return;
+      }
+
+      const fetchedData = Array.isArray(data.data) ? data.data : [];
 
       if (fetchedData.length > 0) {
         const seenNames = new Set<string>();
@@ -104,11 +111,12 @@ export default function DashboardPage() {
         setLeads(uniqueFetched.slice(0, parsedLimit));
       } else {
         setLeads([]);
-        alert("Is search ke liye koi leads nahi mile.");
+        alert("Is search ke liye database mein koi leads match nahi hue.");
       }
-    } catch (err) {
-      console.error("Fetch error:", err);
-      alert("Leads fetch karne me dikkat aayi.");
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error("Fetch error:", errorMsg);
+      alert(`Network / Fetch error: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
