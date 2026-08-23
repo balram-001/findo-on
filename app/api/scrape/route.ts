@@ -154,7 +154,6 @@ function getQueryIndustryLabels(targetIndustry: string): string[] | undefined {
     : labels;
 }
 
-// 💡 FIX: Set parameter type to 'any' to avoid Postgrest version type collision
 async function fetchLeadsForSingleIndustry(
   supabase: any,
   targetIndustry: string,
@@ -164,11 +163,13 @@ async function fetchLeadsForSingleIndustry(
 ) {
   const normalizedIndustry = targetIndustry.toLowerCase();
   const wantsAllIndustries = !targetIndustry || normalizedIndustry === "all" || normalizedIndustry === "all industries";
+  const wantsAllCities = !city || city.toLowerCase() === "all" || city.toLowerCase() === "all cities";
 
   let dbQuery = supabase.from("active_leads").select("*", { count: "exact" });
 
-  if (city) {
-    dbQuery = dbQuery.ilike("city", city);
+  // 💡 FIX: Broad Partial Match (%city%) for both city & location column so sub-areas like Pithampur don't fail
+  if (!wantsAllCities) {
+    dbQuery = dbQuery.or(`city.ilike.%${city}%,location.ilike.%${city}%`);
   }
 
   let industryHasNoValidFilter = false;
