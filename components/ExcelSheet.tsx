@@ -410,7 +410,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                                 }`}
                               >
                                 <div className="flex items-center gap-1.5 truncate">
-                                  <Folder className="w-3 h-3 text-slate-400 shrink-0" />
+                                  <Folder className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                   <span className="truncate">{label}</span>
                                 </div>
                                 <span className="text-[9px] text-slate-400 font-mono">({subCount})</span>
@@ -473,7 +473,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                   {lead.phone}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {/* SAFE MOBILE WEBSITE BUTTON: Only renders when valid http link exists */}
+                  {/* SAFE MOBILE WEBSITE BUTTON */}
                   {lead.website ? (
                     <a
                       href={lead.website}
@@ -485,8 +485,8 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                       <Globe className="w-3.5 h-3.5" />
                     </a>
                   ) : (
-                    <span className="p-1.5 rounded-lg border border-slate-100 text-slate-300 cursor-not-allowed" title="No Website Available">
-                      <Globe className="w-3.5 h-3.5 opacity-40" />
+                    <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded select-none" title="No Website Available">
+                      N/A
                     </span>
                   )}
 
@@ -563,14 +563,14 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                     )}
                   </td>
                   
-                  {/* SAFE TABLE WEBSITE COLUMN: Link only rendered when website is genuine HTTP URL */}
-                  <td className="px-1.5 truncate border-r border-slate-200" title={lead.website || "No Website"}>
+                  {/* CLEAN N/A DISPLAY: Filled look, no 404 navigation */}
+                  <td className="px-1.5 truncate border-r border-slate-200" title={lead.website || "Not Available"}>
                     {lead.website ? (
                       <a href={lead.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-blue-600 hover:underline text-[9px] font-medium">
                         <Globe className="w-2.5 h-2.5 text-blue-500" /> Link
                       </a>
                     ) : (
-                      <span className="text-slate-400 text-[9px]">-</span>
+                      <span className="text-slate-400 text-[9px] font-mono select-none">N/A</span>
                     )}
                   </td>
 
