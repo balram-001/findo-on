@@ -167,6 +167,12 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
           "N/A"
         ).trim();
 
+        // 🔒 Robust Website Validation: only valid http/https URLs allowed
+        const rawWebsite = (item.website || "").trim();
+        const validWebsite = (rawWebsite && rawWebsite !== "N/A" && rawWebsite.toLowerCase().startsWith("http")) 
+          ? rawWebsite 
+          : "";
+
         const hasGstin = !!item.gstin && item.gstin !== "N/A";
         const uniqueId = String(item.id || `lead-${idx}`);
         const gstStatus = hasGstin ? String(item.gstStatus || item.gstCheck || "UNVERIFIED") : "UNVERIFIED";
@@ -175,7 +181,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
           10 +
           (classified.phoneType === "Mobile" ? 30 : 0) +
           (item.isWhatsapp || item.is_whatsapp ? 15 : 0) +
-          (item.website ? 15 : 0) +
+          (validWebsite ? 15 : 0) +
           (hasGstin ? 20 : 0) +
           (gstStatus === "ACTIVE" ? 10 : 0) +
           (item.location || item.city ? 10 : 0)
@@ -195,7 +201,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
           isWhatsapp: classified.isWhatsapp,
           cleanMobileDigits: classified.cleanMobileDigits,
           badgeText: classified.badgeText,
-          website: item.website || "",
+          website: validWebsite,
           gstin: item.gstin || "N/A",
           gstStatus,
           leadScore,
@@ -467,21 +473,27 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                   {lead.phone}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {lead.website && (
+                  {/* SAFE MOBILE WEBSITE BUTTON: Only renders when valid http link exists */}
+                  {lead.website ? (
                     <a
                       href={lead.website}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-                      title="Visit Website"
+                      className="p-1.5 rounded-lg border border-slate-200 text-blue-600 hover:bg-blue-50 transition-colors"
+                      title="Visit Official Website"
                     >
                       <Globe className="w-3.5 h-3.5" />
                     </a>
+                  ) : (
+                    <span className="p-1.5 rounded-lg border border-slate-100 text-slate-300 cursor-not-allowed" title="No Website Available">
+                      <Globe className="w-3.5 h-3.5 opacity-40" />
+                    </span>
                   )}
+
                   {lead.isWhatsapp ? (
                     <button
                       onClick={() => handleWhatsAppClick(lead.cleanMobileDigits, lead.companyName)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-white shadow-xs hover:bg-emerald-600 active:scale-95 transition-all"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-white shadow-xs hover:bg-emerald-600 active:scale-95 transition-all cursor-pointer"
                     >
                       <MessageCircle className="w-3.5 h-3.5 fill-white text-white" /> WhatsApp
                     </button>
@@ -550,9 +562,18 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                       </span>
                     )}
                   </td>
-                  <td className="px-1.5 truncate border-r border-slate-200" title={lead.website}>
-                    {lead.website ? <a href={lead.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-blue-600 hover:underline text-[9px] font-medium"><Globe className="w-2.5 h-2.5 text-blue-500" /> Link</a> : <span className="text-slate-400 text-[9px]">N/A</span>}
+                  
+                  {/* SAFE TABLE WEBSITE COLUMN: Link only rendered when website is genuine HTTP URL */}
+                  <td className="px-1.5 truncate border-r border-slate-200" title={lead.website || "No Website"}>
+                    {lead.website ? (
+                      <a href={lead.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-blue-600 hover:underline text-[9px] font-medium">
+                        <Globe className="w-2.5 h-2.5 text-blue-500" /> Link
+                      </a>
+                    ) : (
+                      <span className="text-slate-400 text-[9px]">-</span>
+                    )}
                   </td>
+
                   <td className="px-2 text-slate-600 truncate text-[10px] border-r border-slate-200" title={lead.location}>{lead.location}</td>
                   <td className="px-1 text-center border-r border-slate-200">
                     <span className={`inline-flex min-w-7 justify-center rounded px-1 py-0.5 text-[9px] font-bold ${lead.leadTier === "A" ? "bg-emerald-100 text-emerald-700" : lead.leadTier === "B" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{lead.leadTier} {lead.leadScore || "-"}</span>

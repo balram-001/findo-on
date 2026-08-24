@@ -148,6 +148,43 @@ function getQueryIndustryLabels(targetIndustry: string): string[] | undefined {
     : labels;
 }
 
+// 🎯 Location Isolation Filter
+function rowMatchesCity(row: LeadRow, targetCity: string, wantsAllCities: boolean): boolean {
+  if (wantsAllCities) return true;
+
+  const searchCity = targetCity.toLowerCase().trim();
+  const rowCity = (row.city || "").toLowerCase().trim();
+  const rowLoc = (row.location || "").toLowerCase().trim();
+  const combinedText = `${rowCity} ${rowLoc}`;
+
+  // 1. Pithampur Search -> Match Pithampur or Dhar only
+  if (searchCity.includes("pithampur")) {
+    return combinedText.includes("pithampur") || combinedText.includes("dhar");
+  }
+
+  // 2. Dewas Search -> Match Dewas only
+  if (searchCity.includes("dewas")) {
+    return combinedText.includes("dewas");
+  }
+
+  // 3. Ujjain Search -> Match Ujjain only
+  if (searchCity.includes("ujjain")) {
+    return combinedText.includes("ujjain");
+  }
+
+  // 4. Indore Search -> Must NOT contain Pithampur, Dewas, or Ujjain
+  if (searchCity.includes("indore")) {
+    const isOtherIndustrialHub =
+      combinedText.includes("pithampur") ||
+      combinedText.includes("dewas") ||
+      combinedText.includes("ujjain");
+    if (isOtherIndustrialHub) return false;
+    return combinedText.includes("indore") || (!rowCity && !rowLoc);
+  }
+
+  return combinedText.includes(searchCity);
+}
+
 async function fetchLeadsForSingleIndustry(
   supabase: any,
   targetIndustry: string,
@@ -204,6 +241,7 @@ async function fetchLeadsForSingleIndustry(
     if (!nameKey || nameKey === "n/a") return;
     if (seenGlobalNames.has(nameKey)) return;
     if (!rowMatchesIndustry(row, targetIndustry, wantsAllIndustries)) return;
+    if (!rowMatchesCity(row, city, wantsAllCities)) return;
 
     seenGlobalNames.add(nameKey);
 

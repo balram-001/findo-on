@@ -1,447 +1,284 @@
-import asyncio
 import os
 import re
-import random
-from pathlib import Path
-from urllib.parse import quote
-
-from dotenv import load_dotenv
-from playwright.async_api import async_playwright
+import time
+import urllib.parse
+import requests
+from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 from supabase import create_client, Client
+from dotenv import load_dotenv
 
-# ============================================================
-# CONFIGURATION & ENV SETUP
-# ============================================================
-BASE_DIR = Path(__file__).resolve().parent
-ENV_FILE = BASE_DIR / ".env" if (BASE_DIR / ".env").exists() else BASE_DIR / ".env.local"
-
-if not ENV_FILE.exists():
-    raise FileNotFoundError(f"Neither .env nor .env.local found in {BASE_DIR}")
-
-load_dotenv(ENV_FILE, override=True)
+load_dotenv(".env.local")
 
 SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL", "").strip()
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
+    SUPABASE_URL = "https://mdblmxeqkkctiqaxomzp.supabase.co"
+    SUPABASE_KEY = "AAPKI_SERVICE_ROLE_KEY"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-INDUSTRY = "Automobile & Auto Components"
-CITY = "Indore"
-TARGET_NEW_LEADS = 50  # 50 Fresh Unique Leads Target
+TARGET_TOTAL = 100
+FIXED_INDUSTRY = "Automobile & Auto Components"
 
-# Sub-Categories and their Exact Category Name Mapping
-COMPONENT_CATEGORIES = {
-    'automotive gear manufacturers': 'Gear Components',
-    'automotive shaft manufacturers': 'Shaft & Transmission Components',
-    'automotive forging plant': 'Forged Components',
-    'automotive die casting plant': 'Casting Components',
-    'automotive aluminium casting factory': 'Aluminium Casting Components',
-    'automotive press parts manufacturers': 'Press & Stamping Parts',
-    'automotive sheet metal stamping factory': 'Sheet Metal Components',
-    'automotive CNC machined components manufacturers': 'Precision Machined Components',
-    'automotive fastener manufacturers': 'Fasteners & Bolts',
-    'automotive spring manufacturers': 'Suspension & Springs',
-    'automotive rubber moulding components factory': 'Rubber Components',
-    'automotive plastic injection moulding manufacturers': 'Plastic & Polymer Components',
-    'automotive wiring harness manufacturers': 'Electrical & Wiring Harness',
-    'automotive brake component manufacturers': 'Brake System Components',
-    'automotive clutch component manufacturers': 'Clutch Components',
-    'automotive steering component factory': 'Steering Components',
-    'automotive radiator manufacturers': 'Cooling & Radiator Systems',
-    'automotive exhaust system manufacturers': 'Exhaust Components',
-    'automotive tier 1 tier 2 suppliers manufacturing': 'Tier 1/2 Ancillary Components'
-}
-
-LOCATION_VARIANTS = [
-    'Pithampur Sector 1', 'Pithampur Sector 2', 'Pithampur Sector 3', 'Pithampur Sector 4',
-    'Kheda Industrial Area Pithampur', 'Sanwer Road Industrial Area Indore',
-    'Palda Industrial Area Indore', 'Dewas Industrial Area', 'Nimrani Industrial Area',
-    'Rau Indore', 'Manglia Indore'
+# Expanded 18 High-Yield Manufacturing Queries strictly within Indore Industrial Hubs
+EXPANDED_AUTO_QUERIES = [
+    ("Auto Parts & Components", "automobile components manufacturers Sanwer Road Sector A B C D Indore"),
+    ("Sheet Metal & Press Components", "automobile sheet metal press components Sanwer Road Indore"),
+    ("Auto Ancillary & Machine Parts", "auto ancillary engineering manufacturing Palda Indore"),
+    ("Automotive Springs & Fasteners", "automobile spring leaf coil fastener manufacturers Indore"),
+    ("Automotive Precision Tooling", "automobile dies moulds precision tools manufacturers Polo Ground Indore"),
+    ("Fabrication & Chassis Works", "automobile chassis fabrication structural works Laxmibai Nagar Indore"),
+    ("Gears & Transmission Components", "automobile transmission gears pinions manufacturing Rau Indore"),
+    ("Automotive Rubber & Plastic Parts", "automotive rubber moulded components manufacturing Indore"),
+    ("Forgings & Casting Components", "automobile metal forging casting foundry Indore Sanwer Road"),
+    ("Auto Electrical & Wiring Harness", "automotive electrical harness components manufacturing Indore"),
+    ("Exhaust & Silencer Systems", "automobile exhaust silencer pipes manufacturing plant Indore"),
+    ("Steering & Suspension Parts", "automobile suspension steering link parts manufacturers Indore"),
+    ("Hydraulic & Pneumatics Auto", "automotive hydraulic cylinders power pack manufacturing Indore"),
+    ("Engine Components & Valves", "engine valves piston auto components manufacturing Indore"),
+    ("Brake & Clutch Components", "automobile brake liner clutch plates manufacturer Indore"),
+    ("Automotive CNC Lathe Components", "automobile precision CNC machined components Indore Bardari"),
+    ("Auto Radiator & Cooling Parts", "automobile radiator heat exchangers manufacturing Indore"),
+    ("Automobile Fasteners & Bolts", "automotive high tensile fasteners bolts manufacturing Indore Loha Mandi")
 ]
 
-# Generate Query Pairs (Query String, Specific Category Name)
-SEARCH_QUERY_OBJECTS = []
-for _comp, _category in COMPONENT_CATEGORIES.items():
-    for _loc in LOCATION_VARIANTS:
-        SEARCH_QUERY_OBJECTS.append({
-            "query": f"{_comp} in {_loc}",
-            "category": _category
-        })
-
-# Shuffle queries so every execution gets a fresh order
-random.shuffle(SEARCH_QUERY_OBJECTS)
-
-INDIAN_STD_CODES = {"11", "22", "33", "44", "20", "40", "80", "79", "120", "731", "729", "7272", "755"}
-
-# ============================================================
-# PHONE EXTRACTION & CLASSIFICATION HELPERS
-# ============================================================
-PHONE_REGEXES = [
-    r"(?:\+91[\s\-()]*)?[6-9]\d{4}[\s\-]?\d{5}",
-    r"(?:0\d{2,4}[\s\-()]*)\d{5,8}",
-    r"\b\d{3,5}[\s\-]\d{5,8}\b",
-    r"(?:\+91[\s\-()]*)?[6-9]\d{9}"
+# Strict Discard List: Retail, Shops, Mechanics, Wholesalers
+EXCLUDE_TERMS = [
+    "shop", "store", "retailer", "retail", "trader", "trading", "dealer", "dealership", 
+    "showroom", "distributor", "wholesaler", "wholesale", "repair", "service center", 
+    "garage", "mechanic", "accessories shop", "spare parts shop", "agency", "reseller",
+    "used car", "second hand", "car wash", "tyre puncture", "puncture", "batteries shop"
 ]
 
-def extract_phones_from_text(text: str):
-    found = []
-    for pattern in PHONE_REGEXES:
-        for match in re.findall(pattern, text or ""):
-            digits = re.sub(r"\D", "", match)
-            if digits.startswith("91") and len(digits) > 10:
-                digits = digits[2:]
-            if 10 <= len(digits) <= 11 and digits not in found:
-                found.append(digits)
-    return found
+def is_valid_manufacturer(name: str, category_tag: str) -> bool:
+    combined = f"{name} {category_tag}".lower()
+    for bad_word in EXCLUDE_TERMS:
+        if re.search(rf"\b{bad_word}\b", combined):
+            return False
+    return True
 
-def classify_phone(raw_phone: str):
-    if not raw_phone:
-        return "N/A", "Missing", False, None
+def clean_phone_number(raw_str: str) -> str:
+    if not raw_str:
+        return "N/A"
+    digits = re.sub(r"[^\d+]", "", raw_str)
+    if digits.startswith("+91") and len(digits) == 13:
+        return digits
+    pure = re.sub(r"\D", "", raw_str)
+    if len(pure) == 10 and pure[0] in "6789":
+        return f"+91{pure}"
+    if len(pure) == 11 and pure.startswith("0") and pure[1] in "6789":
+        return f"+91{pure[1:]}"
+    if len(pure) == 12 and pure.startswith("91"):
+        return f"+{pure}"
+    return raw_str.strip() if len(pure) >= 8 else "N/A"
 
-    digits = re.sub(r"\D", "", str(raw_phone))
-    if not digits:
-        return "N/A", "Missing", False, None
+def get_number_type(phone: str) -> str:
+    if not phone or phone == "N/A":
+        return "N/A"
+    clean = re.sub(r"\D", "", phone)
+    if clean.startswith("91"):
+        clean = clean[2:]
+    if len(clean) == 10 and clean[0] in "6789":
+        return "Mobile / WhatsApp"
+    elif clean.startswith("0731") or len(clean) >= 8:
+        return "Landline"
+    return "Office Line"
 
-    core = digits
-    if core.startswith("91") and len(core) > 10:
-        core = core[2:]
-    core = re.sub(r"^0+", "", core)
-
-    if len(core) == 10:
-        for length in (4, 3, 2):
-            if core[:length] in INDIAN_STD_CODES:
-                return f"0{core}", "Landline", False, None
-        if core[0] in "6789":
-            return f"+91{core}", "Mobile", True, f"https://wa.me/91{core}"
-
-    formatted = digits if digits.startswith("0") else f"0{core or digits}"
-    return formatted, "Landline", False, None
-
-def clean_name(name: str) -> str:
-    name = (name or "").lower()
-    remove_words = ["pvt", "ltd", "private", "limited", "company", "co", "indore", "pithampur", "dewas", "mfg", "works", "industry", "industries"]
-    pattern = r"\b(" + "|".join(map(re.escape, remove_words)) + r")\b"
-    name = re.sub(pattern, "", name)
-    return re.sub(r"[^a-z0-9]", "", name)
-
-# ============================================================
-# STRICT MANUFACTURING FILTERS
-# ============================================================
-HARD_NEGATIVE_TERMS = [
-    "garage", "workshop", "repair", "service center", "service centre", "dealer", 
-    "dealership", "showroom", "retailer", "retail", "trader", "traders", "distributor", 
-    "distributors", "spare parts shop", "spare parts dealer", "parts shop", "car decor", 
-    "seat cover", "rental", "driving school", "tyre shop", "tire shop", "battery dealer", 
-    "lubricant dealer", "mechanic", "accessories", "second hand", "wholesaler", "motor training",
-    "vehicle manufacturing company", "automobile manufacturing company", "bus manufacturer", "truck manufacturer"
-]
-
-MANUFACTURING_TERMS = [
-    "manufacturer", "manufacturers", "manufacturing", "factory", "plant", 
-    "production facility", "oem", "press components", "foundry", "autocomp", "works", "engineering", "stamping", "forging", "casting"
-]
-
-AUTO_COMPONENT_TERMS = [
-    "automotive", "automobile", "auto component", "auto components", "auto parts", 
-    "forging", "casting", "stamping", "machining", "gear", "shaft", "fastener", "spring", "clutch", "brake", "rubber", "plastic"
-]
-
-INVALID_NAME_TERMS = {"results", "directions", "overview", "photos", "reviews", "search results", "google maps", "unknown"}
-
-def invalid_company_name(name: str) -> bool:
-    t = (name or "").lower().strip()
-    if not t or t in INVALID_NAME_TERMS or len(t) < 3:
-        return True
-    if t.startswith("results") or t.endswith("results"):
-        return True
-    return False
-
-def is_probable_auto_manufacturer(company_name: str, website_text: str = "", maps_text: str = ""):
-    if invalid_company_name(company_name):
-        return False
-
-    text = f"{company_name} {website_text} {maps_text}".lower()
-
-    if any(term in text for term in HARD_NEGATIVE_TERMS):
-        return False
-
-    has_mfg = any(term in text for term in MANUFACTURING_TERMS)
-    has_auto = any(term in text for term in AUTO_COMPONENT_TERMS)
-
-    return has_mfg and has_auto
-
-# ============================================================
-# SCRAPING & FALLBACK LOGIC
-# ============================================================
-async def search_website_on_google(page, company_name: str) -> str:
-    """Fallback: Search Google Web if Maps does not provide an official website."""
+def scrape_website_for_contact(url: str):
+    if not url or url == "N/A" or not url.startswith("http"):
+        return None, None
     try:
-        query = quote(f"{company_name} {CITY} official website")
-        url = f"https://www.google.com/search?q={query}"
-        await page.goto(url, wait_until="domcontentloaded", timeout=6000)
-        
-        links = await page.locator('div.g a').all()
-        for link in links[:4]:
-            href = await link.get_attribute("href")
-            if href and href.startswith("http") and not any(ign in href for ign in ["google.", "facebook.", "linkedin.", "indiamart.", "justdial.", "mapquest."]):
-                return href
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=4)
+        if resp.status_code == 200:
+            text = resp.text
+            soup = BeautifulSoup(text, "html.parser")
+            wa_match = re.search(r"(?:api\.whatsapp\.com/send\?phone=|wa\.me/)(\+?\d{10,13})", text, re.IGNORECASE)
+            wa_num = clean_phone_number(wa_match.group(1)) if wa_match else None
+            mobiles = re.findall(r"(?:(?:\+91|0)?[6-9]\d{9})", soup.get_text())
+            mob_num = clean_phone_number(mobiles[0]) if mobiles else None
+            return mob_num, wa_num
+    except Exception:
+        pass
+    return None, None
+
+def search_web_fallback(company_name: str):
+    try:
+        query = f"{company_name} Indore factory contact phone number"
+        search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
+        resp = requests.get(search_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
+        if resp.status_code == 200:
+            phones = re.findall(r"(?:\+91[\-\s]?)?[6-9]\d{9}", resp.text)
+            if phones:
+                return clean_phone_number(phones[0])
     except Exception:
         pass
     return None
 
-async def get_website_data(page, website_url: str):
-    result = {"phone": None, "text": ""}
-    if not website_url:
-        return result
-
-    try:
-        await page.goto(website_url, wait_until="domcontentloaded", timeout=8000)
-        body_text = await page.locator("body").inner_text(timeout=4000)
-        result["text"] = body_text[:50000]
-
-        tel_links = await page.locator('a[href^="tel:"]').all()
-        for link in tel_links[:5]:
-            href = await link.get_attribute("href")
-            if href:
-                extracted = extract_phones_from_text(href)
-                if extracted:
-                    formatted, _, _, _ = classify_phone(extracted[0])
-                    if formatted != "N/A":
-                        result["phone"] = formatted
-                        return result
-
-        candidates = extract_phones_from_text(body_text)
-        if candidates:
-            formatted, _, _, _ = classify_phone(candidates[0])
-            if formatted != "N/A":
-                result["phone"] = formatted
-    except Exception:
-        pass
-
-    return result
-
-async def extract_current_maps_detail(page, fallback_name: str):
-    result = {"company_name": fallback_name, "address": None, "phone": None, "website": None, "maps_text": ""}
+def run_auto_components_to_100():
+    print("Connecting to Supabase to fetch existing leads...")
+    existing = supabase.table("active_leads").select("company_name").execute().data or []
+    seen_names = set([r.get("company_name", "").lower().strip() for r in existing if r.get("company_name")])
     
-    try:
-        title = page.locator("h1").first
-        if await title.count():
-            text = (await title.inner_text()).strip()
-            if text and not invalid_company_name(text):
-                result["company_name"] = text
-    except Exception:
-        pass
+    current_count = len(seen_names)
+    needed = TARGET_TOTAL - current_count
+    print(f"📊 Current Leads in Database: {current_count}")
+    print(f"🎯 Fresh Leads Needed       : {needed} (Target: {TARGET_TOTAL})\n" + "="*50)
 
-    try:
-        loc = page.locator('button[data-item-id="address"], div[data-item-id="address"]').first
-        if await loc.count():
-            result["address"] = (await loc.inner_text()).strip()
-    except Exception:
-        pass
+    if needed <= 0:
+        print("Target already achieved! 100 leads are already in database.")
+        return
 
-    phone_selectors = [
-        'button[data-item-id^="phone:tel:"]',
-        'a[href^="tel:"]',
-        'button[aria-label*="Phone"]',
-        'button[aria-label*="phone"]',
-        'div[aria-label*="Phone"]'
-    ]
-    for selector in phone_selectors:
-        try:
-            loc = page.locator(selector).first
-            if await loc.count():
-                raw = await loc.inner_text() or await loc.get_attribute("href") or ""
-                formatted, _, _, _ = classify_phone(raw)
-                if formatted != "N/A":
-                    result["phone"] = formatted
-                    break
-        except Exception:
-            pass
+    saved_session = 0
 
-    try:
-        loc = page.locator('a[data-item-id="authority"], a[data-tooltip*="website"]').first
-        if await loc.count():
-            result["website"] = await loc.get_attribute("href")
-    except Exception:
-        pass
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False, slow_mo=50)
+        context = browser.new_context(viewport={"width": 1366, "height": 768})
+        page = context.new_page()
 
-    try:
-        body_text = (await page.locator("body").inner_text(timeout=3000))[:30000]
-        result["maps_text"] = body_text
-        
-        if not result["phone"]:
-            extracted = extract_phones_from_text(body_text)
-            if extracted:
-                formatted, _, _, _ = classify_phone(extracted[0])
-                if formatted != "N/A":
-                    result["phone"] = formatted
-    except Exception:
-        pass
-
-    return result
-
-def fetch_all_existing():
-    response = supabase.table("active_leads").select("company_name,phone,website").execute()
-    return response.data or []
-
-# ============================================================
-# MAIN DISCOVERY LOOP
-# ============================================================
-async def discover_new_leads(context, page, target_needed: int):
-    existing = fetch_all_existing()
-    existing_names = {clean_name(row.get("company_name") or "") for row in existing if row.get("company_name")}
-    existing_phones = {re.sub(r"\D", "", str(row.get("phone") or "")) for row in existing if row.get("phone") and row.get("phone") != "N/A"}
-
-    new_count = 0
-    print(f"\n🚀 Starting Scraper | Target Goal: Adding {target_needed} BRAND NEW Unique Leads\n")
-
-    for q_obj in SEARCH_QUERY_OBJECTS:
-        if new_count >= target_needed:
-            break
-
-        query = q_obj["query"]
-        specific_category = q_obj["category"]
-
-        url = f"https://www.google.com/maps/search/{quote(query)}"
-        try:
-            print(f"🔍 Searching Query: {query} [Category: {specific_category}]")
-            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-            
-            try:
-                await page.wait_for_selector('div[role="article"]', timeout=7000)
-            except Exception:
-                print("   ⚠️ No initial listings loaded, moving to next query.")
-                continue
-
-            # Scroll Sidebar 8 Times for Deep Scraping
-            sidebar = page.locator('div[role="feed"]')
-            if await sidebar.count():
-                for _ in range(8):
-                    await sidebar.evaluate("el => el.scrollTop = el.scrollHeight")
-                    await page.wait_for_timeout(600)
-
-            articles = await page.locator('div[role="article"]').all()
-            print(f"   📍 Found {len(articles)} total listings after deep scroll")
-
-        except Exception as exc:
-            print(f"   ⚠️ Query error: {exc}")
-            continue
-
-        for article in articles:
-            if new_count >= target_needed:
+        for category_name, query_str in EXPANDED_AUTO_QUERIES:
+            if (current_count + saved_session) >= TARGET_TOTAL:
                 break
 
+            print(f"\n🏭 Category: [{category_name}]")
+            print(f"   Query   : {query_str}")
+
+            maps_url = f"https://www.google.com/maps/search/{urllib.parse.quote_plus(query_str)}"
             try:
-                name_el = article.locator("div.qBF1Pd, a.hfT39").first
-                if not await name_el.count():
-                    continue
-
-                company = (await name_el.inner_text()).strip()
-                
-                if invalid_company_name(company):
-                    continue
-
-                cleaned_cname = clean_name(company)
-                if cleaned_cname in existing_names:
-                    print(f"   ⏩ Skip existing DB company: {company}")
-                    continue
-
-                link_el = article.locator("a.hfT39, div.qBF1Pd").first
-                if await link_el.count():
-                    await link_el.click()
-                else:
-                    await article.click()
-
-                await page.wait_for_timeout(1800)
-
-                maps = await extract_current_maps_detail(page, company)
-                actual_name = maps["company_name"]
-
-                if invalid_company_name(actual_name):
-                    continue
-
-                # Step 1: Website Logic (Maps Link -> Google Web Search Fallback)
-                website = maps["website"]
-                if not website:
-                    web_tab = await context.new_page()
-                    website = await search_website_on_google(web_tab, actual_name)
-                    await web_tab.close()
-
-                # Step 2: Website Phone Scraping
-                website_data = {"phone": None, "text": ""}
-                if website:
-                    site_tab = await context.new_page()
-                    website_data = await get_website_data(site_tab, website)
-                    await site_tab.close()
-
-                # Step 3: Priority Phone Allocation (Website Phone -> Maps Phone)
-                chosen_phone = website_data["phone"] or maps["phone"] or "N/A"
-                phone_formatted, phone_type, is_wa, wa_link = classify_phone(chosen_phone)
-
-                if not phone_formatted or phone_formatted == "N/A":
-                    print(f"   ❌ Skipped (No Phone Number): {actual_name}")
-                    continue
-
-                phone_digits = re.sub(r"\D", "", phone_formatted)
-                if phone_digits and phone_digits in existing_phones:
-                    print(f"   ⏩ Skip existing DB phone: {actual_name}")
-                    continue
-
-                # Step 4: Strict B2B Manufacturer Check
-                if not is_probable_auto_manufacturer(actual_name, website_data["text"], maps["maps_text"]):
-                    print(f"   ❌ Skipped (Non-Manufacturer/Dealer): {actual_name}")
-                    continue
-
-                # Dynamic Category Assignment Based on Search Intent
-                record = {
-                    "company_name": actual_name,
-                    "phone": phone_formatted,
-                    "phone_type": phone_type,
-                    "is_whatsapp": is_wa,
-                    "whatsapp_link": wa_link,
-                    "website": website or None,
-                    "location": maps["address"] or "Indore / Pithampur / Dewas",
-                    "city": "Pithampur" if "pithampur" in query.lower() else ("Dewas" if "dewas" in query.lower() else "Indore"),
-                    "category": specific_category,
-                    "industry": INDUSTRY,
-                }
-
-                supabase.table("active_leads").insert(record).execute()
-
-                existing_names.add(cleaned_cname)
-                if phone_digits:
-                    existing_phones.add(phone_digits)
-
-                new_count += 1
-                source = "Website" if website_data["phone"] else "Maps"
-                print(f"   ✅ [{new_count}/{target_needed}] SAVED: {actual_name} | {phone_formatted} ({phone_type}/{source}) | Cat: {specific_category}")
-
+                page.goto(maps_url, timeout=20000)
+                page.wait_for_timeout(2500)
             except Exception:
                 continue
 
-    return new_count
+            # Scroll Left Feed
+            try:
+                feed = page.locator('div[role="feed"]').first
+                if feed.is_visible(timeout=3000):
+                    for _ in range(5):
+                        feed.evaluate("el => el.scrollTop += 2000")
+                        page.wait_for_timeout(900)
+            except Exception:
+                pass
 
-# ============================================================
-# MAIN EXECUTION
-# ============================================================
-async def main():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(viewport={"width": 1280, "height": 800})
+            cards = page.locator('div[role="feed"] a[href*="/maps/place/"]').all()
+            if not cards:
+                cards = page.locator('a.hfpxzc').all()
 
-        # Media & font blocking for high performance
-        await context.route("**/*.{png,jpg,jpeg,svg,woff,woff2,gif,mp4,webp}", lambda route: route.abort())
+            for card in cards:
+                if (current_count + saved_session) >= TARGET_TOTAL:
+                    break
+                try:
+                    card.click(timeout=3000)
+                    page.wait_for_timeout(1200)
 
-        page = await context.new_page()
+                    # 1. Company Name
+                    name_el = page.locator('h1.DUwDvf').first
+                    if not name_el.is_visible(timeout=1500):
+                        continue
+                    company_name = re.sub(r"\s+", " ", name_el.inner_text()).strip()
 
-        try:
-            await discover_new_leads(context, page, TARGET_NEW_LEADS)
+                    norm_name = company_name.lower().strip()
+                    if norm_name in seen_names or "results" in norm_name or len(company_name) < 3:
+                        continue
 
-        finally:
-            await browser.close()
+                    # 2. Strict Filter Check
+                    category_tag = ""
+                    cat_btn = page.locator('button[jsaction*="category"]').first
+                    if cat_btn.is_visible(timeout=800):
+                        category_tag = cat_btn.inner_text().strip()
+
+                    if not is_valid_manufacturer(company_name, category_tag):
+                        print(f"  ❌ Skipped Non-Manufacturer/Shop: {company_name}")
+                        continue
+
+                    # 3. Exact Map Address
+                    addr_btn = page.locator('button[data-item-id="address"]').first
+                    location_text = "Indore, Madhya Pradesh"
+                    if addr_btn.is_visible(timeout=1000):
+                        raw_addr = addr_btn.inner_text().replace("Address:", "").replace("Directions", "").strip()
+                        raw_addr = re.sub(r"^[^a-zA-Z0-9]+", "", raw_addr)
+                        if len(raw_addr) > 8:
+                            location_text = raw_addr
+
+                    # Strict Indore Validation
+                    addr_lower = (location_text + " " + company_name).lower()
+                    if any(x in addr_lower for x in ["pithampur", "dhar", "dewas", "ujjain", "bhopal"]):
+                        continue
+
+                    # 4. Website
+                    website = "N/A"
+                    web_btn = page.locator('a[data-item-id="authority"]').first
+                    if web_btn.is_visible(timeout=800):
+                        href = web_btn.get_attribute("href")
+                        if href and href.startswith("http"):
+                            website = href
+
+                    # 5. Maps Phone
+                    map_phone = "N/A"
+                    phone_btn = page.locator('button[data-item-id*="phone"]').first
+                    if phone_btn.is_visible(timeout=800):
+                        map_phone = clean_phone_number(phone_btn.inner_text())
+
+                    # Priority Phone Fallback
+                    final_phone = "N/A"
+                    whatsapp_link = "N/A"
+
+                    # 1st Priority: Website
+                    site_mob, site_wa = scrape_website_for_contact(website)
+                    if site_mob:
+                        final_phone = site_mob
+                    if site_wa:
+                        whatsapp_link = f"https://wa.me/{site_wa.replace('+', '')}"
+
+                    # 2nd Priority: Web Search Fallback
+                    if final_phone == "N/A":
+                        web_mob = search_web_fallback(company_name)
+                        if web_mob:
+                            final_phone = web_mob
+
+                    # 3rd Priority: Maps Phone
+                    if final_phone == "N/A":
+                        final_phone = map_phone
+
+                    num_type = get_number_type(final_phone)
+                    if whatsapp_link == "N/A" and num_type == "Mobile / WhatsApp":
+                        whatsapp_link = f"https://wa.me/{final_phone.replace('+', '')}"
+
+                    # Save verified lead to Supabase
+                    row_data = {
+                        "company_name": company_name,
+                        "industry": FIXED_INDUSTRY,
+                        "category": category_name,
+                        "phone": final_phone,
+                        "phone_type": num_type,
+                        "website": website,
+                        "location": location_text,
+                        "city": "Indore",
+                        "whatsapp_link": whatsapp_link,
+                        "created_at": "now()"
+                    }
+
+                    supabase.table("active_leads").upsert(
+                        row_data,
+                        on_conflict="company_name,city,phone"
+                    ).execute()
+
+                    seen_names.add(norm_name)
+                    saved_session += 1
+                    total_now = current_count + saved_session
+
+                    print(f"[{total_now}/{TARGET_TOTAL}] 🏭 {company_name}")
+                    print(f"    🏷️ {category_name}")
+                    print(f"    📞 {final_phone} ({num_type})")
+                    print(f"    🌐 {website}")
+                    print(f"    📍 {location_text}\n")
+
+                except Exception:
+                    continue
+
+        browser.close()
+        print(f"\n🎉 Target Completed! Exactly {current_count + saved_session} verified Automobile Manufacturers now saved in database.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run_auto_components_to_100()
