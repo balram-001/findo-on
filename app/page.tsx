@@ -20,7 +20,7 @@ export default function DashboardPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
-  // Gemini-style sliding panel toggle state
+  // Default open
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
   const handleToggleSelect = (id: number | string) => {
@@ -81,8 +81,10 @@ export default function DashboardPage() {
     setLeads([]);
     setLoading(true);
 
-    // Auto-close sidebar on fetch click to display full spreadsheet
-    setIsSidebarOpen(false);
+    // 💡 Auto-close ONLY on mobile screens (< 768px). On desktop it stays open!
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
 
     try {
       const parsedLimit = parseInt(String(numLeads), 10) || 50;
