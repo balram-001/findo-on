@@ -1,7 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { Loader2, Filter, X } from "lucide-react";
+import {
+  Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Filter,
+} from "lucide-react";
 import SidebarFilters from "@/components/SidebarFilters";
 import ExcelSheet, { Lead } from "@/components/ExcelSheet";
 import HeaderBar from "@/components/HeaderBar";
@@ -14,7 +19,9 @@ export default function DashboardPage() {
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
-  const [mobileFilterOpen, setMobileFilterOpen] = useState<boolean>(false);
+
+  // Gemini-style sliding panel toggle state
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
   const handleToggleSelect = (id: number | string) => {
     setLeads((prev) =>
@@ -73,7 +80,9 @@ export default function DashboardPage() {
 
     setLeads([]);
     setLoading(true);
-    setMobileFilterOpen(false);
+
+    // Auto-close sidebar on fetch click to display full spreadsheet
+    setIsSidebarOpen(false);
 
     try {
       const parsedLimit = parseInt(String(numLeads), 10) || 50;
@@ -125,91 +134,94 @@ export default function DashboardPage() {
   const selectedCount = leads.filter((l) => l.selected).length;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+    <div className="h-screen w-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
       <HeaderBar
         selectedCount={selectedCount}
         totalCount={leads.length}
         leadsData={leads}
       />
 
-      {/* Mobile Sticky Filter Trigger Button */}
-      <div className="md:hidden flex items-center justify-between bg-white border-b border-slate-200 px-4 py-2.5 shadow-xs">
-        <span className="text-xs font-bold text-slate-700">
-          {leads.length} leads loaded
-        </span>
-        <button
-          onClick={() => setMobileFilterOpen(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold shadow-xs hover:bg-emerald-700 active:scale-95 transition-all"
-        >
-          <Filter className="w-3.5 h-3.5" />
-          Filter & Search
-        </button>
+      {/* Top Controls Bar */}
+      <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center justify-between shrink-0 shadow-2xs z-20">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold shadow-2xs border border-slate-200 cursor-pointer transition-all active:scale-95"
+            title={isSidebarOpen ? "Collapse Filter Panel" : "Open Filter Panel"}
+          >
+            {isSidebarOpen ? (
+              <>
+                <PanelLeftClose className="w-4 h-4 text-slate-600" />
+                <span className="text-[11px]">Hide Filters</span>
+              </>
+            ) : (
+              <>
+                <PanelLeftOpen className="w-4 h-4 text-emerald-600" />
+                <span className="text-[11px] font-bold text-slate-800">Show Filters</span>
+              </>
+            )}
+          </button>
+
+          <span className="text-xs font-semibold text-slate-600 truncate">
+            {loading ? "Fetching live leads..." : `${leads.length} leads loaded`}
+          </span>
+        </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Desktop Sidebar */}
-        <aside className="hidden md:block w-80 bg-white border-r border-slate-200 p-4 overflow-y-auto">
-          <SidebarFilters
-            selectedIndustries={selectedIndustries}
-            setSelectedIndustries={setSelectedIndustries}
-            city={city}
-            setCity={setCity}
-            numLeads={numLeads}
-            setNumLeads={setNumLeads}
-            hideLandlines={hideLandlines}
-            setHideLandlines={setHideLandlines}
-            totalLeads={leads.length}
-            onFetchLeads={handleFetchLeads}
-            onRemoveDuplicates={handleRemoveDuplicates}
-            onVerifyWhatsApp={handleVerifyWhatsApp}
-            onFiltersChanged={() => setLeads([])}
-            loading={loading}
-          />
+        {/* Gemini Style Sliding Left Panel */}
+        <aside
+          className={`fixed md:relative z-30 top-0 bottom-0 left-0 bg-white border-r border-slate-200 transition-all duration-300 ease-in-out flex flex-col shadow-xl md:shadow-none ${
+            isSidebarOpen
+              ? "w-80 translate-x-0"
+              : "w-0 -translate-x-full md:translate-x-0 md:w-0 overflow-hidden border-none opacity-0"
+          }`}
+        >
+          <div className="w-80 h-full p-4 overflow-y-auto flex flex-col">
+            <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-emerald-600" /> Search Filters
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                title="Close"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+            </div>
+
+            <SidebarFilters
+              selectedIndustries={selectedIndustries}
+              setSelectedIndustries={setSelectedIndustries}
+              city={city}
+              setCity={setCity}
+              numLeads={numLeads}
+              setNumLeads={setNumLeads}
+              hideLandlines={hideLandlines}
+              setHideLandlines={setHideLandlines}
+              totalLeads={leads.length}
+              onFetchLeads={handleFetchLeads}
+              onRemoveDuplicates={handleRemoveDuplicates}
+              onVerifyWhatsApp={handleVerifyWhatsApp}
+              onFiltersChanged={() => setLeads([])}
+              loading={loading}
+            />
+          </div>
         </aside>
 
-        {/* Mobile Filter Modal / Drawer */}
-        {mobileFilterOpen && (
-          <div className="fixed inset-0 z-50 md:hidden bg-slate-900/60 backdrop-blur-xs flex justify-end">
-            <div className="w-full max-w-xs bg-white h-full p-4 overflow-y-auto flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
-              <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
-                <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-emerald-600" /> Filters & Limits
-                </span>
-                <button
-                  onClick={() => setMobileFilterOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <SidebarFilters
-                selectedIndustries={selectedIndustries}
-                setSelectedIndustries={setSelectedIndustries}
-                city={city}
-                setCity={setCity}
-                numLeads={numLeads}
-                setNumLeads={setNumLeads}
-                hideLandlines={hideLandlines}
-                setHideLandlines={setHideLandlines}
-                totalLeads={leads.length}
-                onFetchLeads={handleFetchLeads}
-                onRemoveDuplicates={handleRemoveDuplicates}
-                onVerifyWhatsApp={handleVerifyWhatsApp}
-                onFiltersChanged={() => setLeads([])}
-                loading={loading}
-              />
-            </div>
-          </div>
+        {/* Mobile Backdrop Overlay */}
+        {isSidebarOpen && (
+          <div
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-2xs z-20 md:hidden"
+          />
         )}
 
         {/* Main Content Area */}
-        <main className="flex-1 p-3 md:p-6 overflow-y-auto bg-slate-50">
-          <div className="hidden md:flex mb-4 items-center justify-between">
-            <span className="text-xs font-semibold text-slate-700">
-              {loading ? "Fetching live leads from Supabase..." : `${leads.length} leads loaded`}
-            </span>
-          </div>
-
+        <main className="flex-1 p-2 sm:p-4 overflow-y-auto bg-slate-50 w-full">
           <ExcelSheet
             leads={leads}
             requestedLimit={parseInt(String(numLeads), 10) || 200}
