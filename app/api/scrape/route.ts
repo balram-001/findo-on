@@ -33,7 +33,11 @@ type LeadRow = {
   city?: string;
   gstin?: string;
   gst_status?: string;
+  phone_source?: string;
+  phone_verified_at?: string;
 };
+
+type WebsiteKind = "official" | "marketplace" | "short_link" | "missing" | "invalid";
 
 const INDUSTRY_SEARCH_MAP: Record<string, string[]> = {
   "Automobile & Auto Components": [
@@ -52,6 +56,27 @@ const INDUSTRY_SEARCH_MAP: Record<string, string[]> = {
     "Food", "Agro", "Soya", "Grain", "Flour", "Oil", "Spice", "Snack", "Bakery", "Dairy",
   ],
 };
+
+// These aliases make free-text searches behave the same as choosing one of the
+// five supported industries from the filter menu.
+const INDUSTRY_ALIASES: Record<string, string> = {
+  automobile: "Automobile & Auto Components",
+  "auto components": "Automobile & Auto Components",
+  pharma: "Pharmaceuticals & Healthcare Manufacturing",
+  pharmaceutical: "Pharmaceuticals & Healthcare Manufacturing",
+  healthcare: "Pharmaceuticals & Healthcare Manufacturing",
+  chemical: "Chemical Manufacturing & Allied Industries",
+  chemicals: "Chemical Manufacturing & Allied Industries",
+  packaging: "Packaging, Plastics & Paper Manufacturing",
+  plastic: "Packaging, Plastics & Paper Manufacturing",
+  plastics: "Packaging, Plastics & Paper Manufacturing",
+  paper: "Packaging, Plastics & Paper Manufacturing",
+  food: "Food Processing & Agro Manufacturing",
+  agro: "Food Processing & Agro Manufacturing",
+};
+
+const MARKETPLACE_HOSTS = ["indiamart.com", "tradeindia.com", "justdial.com", "exportersindia.com", "facebook.com", "instagram.com", "linkedin.com"];
+const SHORT_LINK_HOSTS = ["page.link", "bit.ly", "tinyurl.com", "t.co", "goo.gl"];
 
 const INDUSTRY_LABEL_MAP: Record<string, string[]> = {
   "Automobile & Auto Components": ["Automobile & Auto Components"],
@@ -93,6 +118,39 @@ function parseLimit(value: unknown): number {
 
 function sanitizeFilterValue(raw: string): string {
   return raw.replace(/[,().%_*\\]/g, "").trim();
+}
+
+function normalizeIndustrySelection(rawIndustry: string): string {
+  const normalized = rawIndustry.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return "";
+
+  const exactIndustry = Object.keys(INDUSTRY_SEARCH_MAP).find(
+    (industry) => industry.toLowerCase() === normalized
+  );
+  if (exactIndustry) return exactIndustry;
+
+  const alias = Object.entries(INDUSTRY_ALIASES).find(([keyword]) => normalized.includes(keyword));
+  return alias ? alias[1] : rawIndustry.trim();
+}
+
+function classifyWebsite(rawWebsite?: string): { website?: string; websiteKind: WebsiteKind } {
+  const value = rawWebsite?.trim();
+  if (!value || value.toLowerCase() === "n/a") return { websiteKind: "missing" };
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { websiteKind: "invalid" };
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (MARKETPLACE_HOSTS.some((domain) => host === domain || host.endsWith(`.${domain}`))) {
+      return { website: parsed.toString(), websiteKind: "marketplace" };
+    }
+    if (SHORT_LINK_HOSTS.some((domain) => host === domain || host.endsWith(`.${domain}`))) {
+      return { website: parsed.toString(), websiteKind: "short_link" };
+    }
+    return { website: parsed.toString(), websiteKind: "official" };
+  } catch {
+    return { websiteKind: "invalid" };
+  }
 }
 
 function resolveIndustryKeywords(targetIndustry: string): string[] {
@@ -255,8 +313,10 @@ async function fetchLeadsForSingleIndustry(
       location: row.location || row.city || city || "Indore",
       phone: row.phone || "N/A",
       phoneType: row.phone_type || (row.phone ? "Mobile" : "Missing"),
+      phoneSource: row.phone_source || "maps_fallback",
+      phoneVerifiedAt: row.phone_verified_at || undefined,
       isWhatsapp: Boolean(row.is_whatsapp),
-      website: row.website || undefined,
+      ...classifyWebsite(row.website),
       gstin: row.gstin || undefined,
       gstStatus: row.gst_status || undefined,
       whatsappLink: row.whatsapp_link || undefined,
@@ -279,12 +339,12 @@ export async function POST(request: Request) {
 
     let targetIndustries: string[] = [];
     if (Array.isArray(body.industries) && body.industries.length > 0) {
-      targetIndustries = body.industries.map((s) => s.trim()).filter(Boolean);
+      targetIndustries = body.industries.map(normalizeIndustrySelection).filter(Boolean);
     } else if (Array.isArray(body.categories) && body.categories.length > 0) {
-      targetIndustries = body.categories.map((s) => s.trim()).filter(Boolean);
+      targetIndustries = body.categories.map(normalizeIndustrySelection).filter(Boolean);
     } else {
       const single = body.industry?.trim() || body.category?.trim() || "";
-      if (single) targetIndustries = [single];
+      if (single) targetIndustries = [normalizeIndustrySelection(single)];
     }
 
     const rawCity = body.city?.trim() || "";

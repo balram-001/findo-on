@@ -30,11 +30,14 @@ export interface Lead {
   phone?: string;
   phoneType?: string;
   phone_type?: string;
+  phoneSource?: "official_website" | "maps_fallback" | string;
+  phoneVerifiedAt?: string;
   isWhatsapp?: boolean;
   is_whatsapp?: boolean;
   whatsappLink?: string;
   whatsapp_link?: string;
   website?: string;
+  websiteKind?: "official" | "marketplace" | "short_link" | "missing" | "invalid";
   location?: string;
   industry?: string;
   category?: string;
@@ -116,6 +119,42 @@ function normalizeKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+type WebsiteKind = "official" | "marketplace" | "short_link" | "missing" | "invalid";
+
+function classifyWebsite(rawWebsite?: string, suppliedKind?: Lead["websiteKind"]): { url: string; kind: WebsiteKind } {
+  const value = rawWebsite?.trim();
+  if (!value || value.toLowerCase() === "n/a") return { url: "", kind: "missing" };
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { url: "", kind: "invalid" };
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const isMarketplace = ["indiamart.com", "tradeindia.com", "justdial.com", "exportersindia.com", "facebook.com", "instagram.com", "linkedin.com"]
+      .some((domain) => host === domain || host.endsWith(`.${domain}`));
+    const isShortLink = ["page.link", "bit.ly", "tinyurl.com", "t.co", "goo.gl"]
+      .some((domain) => host === domain || host.endsWith(`.${domain}`));
+    return { url: parsed.toString(), kind: suppliedKind || (isMarketplace ? "marketplace" : isShortLink ? "short_link" : "official") };
+  } catch {
+    return { url: "", kind: "invalid" };
+  }
+}
+
+function WebsiteLink({ website, websiteKind, compact = false }: { website: string; websiteKind: WebsiteKind; compact?: boolean }) {
+  if (websiteKind === "missing") return <span className="text-slate-400 text-[9px] font-mono select-none" title="No website available">N/A</span>;
+  if (websiteKind === "invalid") return <span className="text-rose-600 text-[9px] font-semibold" title="Invalid website link">Invalid link</span>;
+
+  const isOfficial = websiteKind === "official";
+  const label = isOfficial ? (compact ? "Website" : "Official") : websiteKind === "marketplace" ? "Marketplace" : "Short link";
+  const color = isOfficial ? "text-blue-600 hover:underline" : "text-amber-700 hover:underline";
+  const title = isOfficial ? "Open official website" : websiteKind === "marketplace" ? "Open marketplace listing — not an official website" : "Open short link — verify before use";
+
+  return (
+    <a href={website} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-0.5 text-[9px] font-medium ${color}`} title={title}>
+      <Globe className="w-2.5 h-2.5" /> {label}
+    </a>
+  );
+}
+
 export const ExcelSheet: React.FC<ExcelSheetProps> = ({
   leads = [],
   rawLeads = [],
@@ -167,11 +206,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
           "N/A"
         ).trim();
 
-        // 🔒 Robust Website Validation: only valid http/https URLs allowed
-        const rawWebsite = (item.website || "").trim();
-        const validWebsite = (rawWebsite && rawWebsite !== "N/A" && rawWebsite.toLowerCase().startsWith("http")) 
-          ? rawWebsite 
-          : "";
+        const websiteInfo = classifyWebsite(item.website, item.websiteKind);
 
         const hasGstin = !!item.gstin && item.gstin !== "N/A";
         const uniqueId = String(item.id || `lead-${idx}`);
@@ -181,7 +216,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
           10 +
           (classified.phoneType === "Mobile" ? 30 : 0) +
           (item.isWhatsapp || item.is_whatsapp ? 15 : 0) +
-          (validWebsite ? 15 : 0) +
+          (websiteInfo.kind === "official" ? 15 : 0) +
           (hasGstin ? 20 : 0) +
           (gstStatus === "ACTIVE" ? 10 : 0) +
           (item.location || item.city ? 10 : 0)
@@ -198,10 +233,12 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
           location: item.location || item.city || "N/A",
           phone: classified.displayPhone,
           phoneType: classified.phoneType,
+          phoneSource: item.phoneSource || "maps_fallback",
           isWhatsapp: classified.isWhatsapp,
           cleanMobileDigits: classified.cleanMobileDigits,
           badgeText: classified.badgeText,
-          website: validWebsite,
+          website: websiteInfo.url,
+          websiteKind: websiteInfo.kind,
           gstin: item.gstin || "N/A",
           gstStatus,
           leadScore,
@@ -473,22 +510,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                   {lead.phone}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {/* SAFE MOBILE WEBSITE BUTTON */}
-                  {lead.website ? (
-                    <a
-                      href={lead.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-1.5 rounded-lg border border-slate-200 text-blue-600 hover:bg-blue-50 transition-colors"
-                      title="Visit Official Website"
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                    </a>
-                  ) : (
-                    <span className="text-[10px] font-mono text-slate-400 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded select-none" title="No Website Available">
-                      N/A
-                    </span>
-                  )}
+                  <WebsiteLink website={lead.website} websiteKind={lead.websiteKind} compact />
 
                   {lead.isWhatsapp ? (
                     <button
@@ -533,7 +555,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
               <th className="w-36 px-2 border-r border-slate-300 font-bold truncate">CATEGORY</th>
               <th className="w-32 px-2 border-r border-slate-300 font-bold truncate">PHONE NUMBER</th>
               <th className="w-24 px-2 border-r border-slate-300 font-bold truncate">NUMBER TYPE</th>
-              <th className="w-14 px-1.5 border-r border-slate-300 font-bold truncate">WEBSITE</th>
+              <th className="w-20 px-1.5 border-r border-slate-300 font-bold truncate" title="Official website or clearly labelled source link">WEB / SOURCE</th>
               <th className="w-36 px-2 border-r border-slate-300 font-bold truncate">LOCATION</th>
               <th className="w-16 px-1 text-center border-r border-slate-300 font-bold truncate">QUALITY</th>
               <th className="w-28 px-2 border-r border-slate-300 font-bold truncate">GSTIN</th>
@@ -550,7 +572,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                   <td className="px-2 font-semibold text-slate-900 truncate border-r border-slate-200" title={lead.companyName}>{lead.companyName}</td>
                   <td className="px-2 text-indigo-700 font-semibold truncate text-[10px] border-r border-slate-200 bg-indigo-50/30" title={lead.industry}>{lead.industry}</td>
                   <td className="px-2 text-slate-600 truncate text-[10px] border-r border-slate-200" title={lead.category}>{lead.category}</td>
-                  <td className="px-2 font-mono text-slate-700 truncate border-r border-slate-200 font-medium">{lead.phone}</td>
+                  <td className="px-2 font-mono text-slate-700 truncate border-r border-slate-200 font-medium" title={lead.phoneSource === "official_website" ? "Verified from official website" : "Maps/legacy fallback number"}>{lead.phone}</td>
                   <td className="px-1.5 whitespace-nowrap border-r border-slate-200">
                     {lead.isWhatsapp ? (
                       <button onClick={() => handleWhatsAppClick(lead.cleanMobileDigits, lead.companyName)} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer transition-colors" title="Open WhatsApp Chat">
@@ -563,15 +585,8 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                     )}
                   </td>
                   
-                  {/* CLEAN N/A DISPLAY: Filled look, no 404 navigation */}
                   <td className="px-1.5 truncate border-r border-slate-200" title={lead.website || "Not Available"}>
-                    {lead.website ? (
-                      <a href={lead.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-blue-600 hover:underline text-[9px] font-medium">
-                        <Globe className="w-2.5 h-2.5 text-blue-500" /> Link
-                      </a>
-                    ) : (
-                      <span className="text-slate-400 text-[9px] font-mono select-none">N/A</span>
-                    )}
+                    <WebsiteLink website={lead.website} websiteKind={lead.websiteKind} />
                   </td>
 
                   <td className="px-2 text-slate-600 truncate text-[10px] border-r border-slate-200" title={lead.location}>{lead.location}</td>

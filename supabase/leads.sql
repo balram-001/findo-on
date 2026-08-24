@@ -28,6 +28,12 @@ create table if not exists public.active_leads (
   constraint active_leads_company_city_phone_key unique (company_name, city, phone)
 );
 
+-- Data provenance for phone enrichment. Existing databases need ALTER TABLE
+-- because create table above only affects fresh installs.
+alter table public.active_leads
+  add column if not exists phone_source text not null default 'maps_fallback',
+  add column if not exists phone_verified_at timestamptz;
+
 -- =========================================================================
 -- 3. AUTO UPDATED_AT TIMESTAMP TRIGGER
 -- Updates 'updated_at' column whenever a row is modified

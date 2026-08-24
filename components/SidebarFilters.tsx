@@ -18,6 +18,27 @@ const INDUSTRY_LIST = [
   "Food Processing & Agro Manufacturing",
 ];
 
+const INDUSTRY_ALIASES: Array<[string, string]> = [
+  ["automobile", "Automobile & Auto Components"],
+  ["auto", "Automobile & Auto Components"],
+  ["pharma", "Pharmaceuticals & Healthcare Manufacturing"],
+  ["health", "Pharmaceuticals & Healthcare Manufacturing"],
+  ["chemical", "Chemical Manufacturing & Allied Industries"],
+  ["packaging", "Packaging, Plastics & Paper Manufacturing"],
+  ["plastic", "Packaging, Plastics & Paper Manufacturing"],
+  ["paper", "Packaging, Plastics & Paper Manufacturing"],
+  ["food", "Food Processing & Agro Manufacturing"],
+  ["agro", "Food Processing & Agro Manufacturing"],
+];
+
+function resolveIndustrySelection(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return "";
+  const exact = INDUSTRY_LIST.find((industry) => industry.toLowerCase() === normalized);
+  if (exact) return exact;
+  return INDUSTRY_ALIASES.find(([keyword]) => normalized.includes(keyword))?.[1] || value.trim();
+}
+
 interface SidebarProps {
   selectedIndustries: string[];
   setSelectedIndustries: React.Dispatch<React.SetStateAction<string[]>>;
@@ -60,7 +81,7 @@ export default function SidebarFilters({
   };
 
   const addCustomIndustry = () => {
-    const cleaned = customIndustry.trim();
+    const cleaned = resolveIndustrySelection(customIndustry);
     if (!cleaned) return;
     if (!selectedIndustries.includes(cleaned)) updateIndustries([...selectedIndustries, cleaned]);
     setCustomIndustry("");
