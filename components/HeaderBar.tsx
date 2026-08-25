@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Download, Database, CheckCircle2 } from "lucide-react";
+import * as XLSX from "xlsx";
 
 export interface Lead {
   id: number | string;
@@ -42,6 +43,16 @@ export default function HeaderBar({
   onExportCheck,
 }: HeaderBarProps) {
 
+  const toSafeSpreadsheetValue = (value: unknown): string | number | boolean => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string") {
+      // Prevent spreadsheet formula execution when a lead field starts with a formula character.
+      return /^[=+\-@]/.test(value) ? `'${value}` : value;
+    }
+    if (typeof value === "number" || typeof value === "boolean") return value;
+    return JSON.stringify(value);
+  };
+
   const executeDownload = () => {
     if (!leadsData || leadsData.length === 0) {
       alert("Export karne ke liye koi leads available nahi hain!");
@@ -51,89 +62,29 @@ export default function HeaderBar({
     const selectedLeads = leadsData.filter((l) => l.selected);
     const dataToExport = selectedLeads.length > 0 ? selectedLeads : leadsData;
 
-    const headers = [
-      "S.NO",
-      "COMPANY NAME",
-      "INDUSTRY",
-      "CATEGORY",
-      "PHONE NUMBER",
-      "NUMBER TYPE",
-      "WEB / SOURCE",
-      "LOCATION",
-      "QUALITY",
-      "GSTIN",
-      "GST CHECK"
+    // Keep every original field as its own column. This avoids CSV parsing issues
+    // and makes the downloaded file import cleanly into Google Sheets and Excel.
+    const rawColumns = Array.from(
+      new Set(dataToExport.flatMap((lead) => Object.keys(lead)))
+    );
+    const rows = dataToExport.map((lead, index) => ({
+      "S.No.": index + 1,
+      ...Object.fromEntries(rawColumns.map((column) => [column, toSafeSpreadsheetValue(lead[column as keyof Lead])])),
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+    worksheet["!autofilter"] = { ref: XLSX.utils.encode_range(XLSX.utils.decode_range(worksheet["!ref"] || "A1")) };
+    worksheet["!cols"] = [
+      { wch: 8 },
+      ...rawColumns.map((column) => ({ wch: Math.min(Math.max(column.length + 2, 14), 32) })),
     ];
 
-    const rows = dataToExport.map((item, index) => {
-      // 1. Phone number classification
-      const rawPhone = String(item.phone || "").trim();
-      const digits = rawPhone.replace(/\D/g, "").replace(/^91/, "").replace(/^0+/, "");
-      
-      const isMissing = !rawPhone || rawPhone === "N/A" || rawPhone === "Missing" || digits.length === 0;
-      const isMobile = !isMissing && digits.length === 10 && /^[6-9]/.test(digits);
-
-      let phoneFormatted = "N/A";
-      let numberType = "Missing";
-
-      if (isMissing) {
-        phoneFormatted = "N/A";
-        numberType = "Missing";
-      } else if (isMobile) {
-        phoneFormatted = `+91 ${digits}`;
-        numberType = "WhatsApp";
-      } else {
-        phoneFormatted = rawPhone.startsWith("0") || rawPhone.startsWith("+") ? rawPhone : `0${digits}`;
-        numberType = "Landline";
-      }
-
-      // 2. Exact UI field values
-      const company = `"${(item.companyName || item.company_name || "N/A").replace(/"/g, '""')}"`;
-      const industry = `"${(item.industry || "N/A").replace(/"/g, '""')}"`;
-      const category = `"${(item.category || "N/A").replace(/"/g, '""')}"`;
-      const phone = `"${phoneFormatted}"`;
-      const type = `"${numberType}"`;
-      const webSource = `"${(item.website && item.website !== "N/A" ? item.website : "N/A").replace(/"/g, '""')}"`;
-      const location = `"${(item.location || item.city || "N/A").replace(/"/g, '""')}"`;
-      
-      const tier = item.leadTier || (item.leadScore && item.leadScore >= 70 ? "A" : item.leadScore && item.leadScore >= 45 ? "B" : "C");
-      const score = item.leadScore ? item.leadScore : "-";
-      const quality = `"${tier} ${score}"`;
-
-      const gstin = `"${(item.gstin && item.gstin !== "N/A" ? item.gstin : "N/A").replace(/"/g, '""')}"`;
-      const gstStatus = item.gstin && item.gstin !== "N/A"
-        ? (item.gstStatus === "ACTIVE" ? "ACTIVE" : "UNVERIFIED")
-        : "UNVERIFIED";
-      const gstCheck = `"${gstStatus}"`;
-
-      return [
-        index + 1,
-        company,
-        industry,
-        category,
-        phone,
-        type,
-        webSource,
-        location,
-        quality,
-        gstin,
-        gstCheck
-      ].join(",");
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Leads");
+    XLSX.writeFile(workbook, `Findo_Leads_${new Date().toISOString().split("T")[0]}.xlsx`, {
+      compression: true,
     });
-
-    const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    const fileName = `Findo_Leads_${new Date().toISOString().split("T")[0]}.csv`;
-
-    link.setAttribute("href", url);
-    link.setAttribute("download", fileName);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   const handleExportExcel = () => {
@@ -172,7 +123,7 @@ export default function HeaderBar({
           className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 py-2 rounded-lg text-xs font-bold transition shadow-sm cursor-pointer"
         >
           <Download className="w-4 h-4" />
-          <span>Export Excel (.csv)</span>
+          <span>Export Excel (.xlsx)</span>
         </button>
       </div>
     </header>
