@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import {
   Loader2,
   PanelLeftClose,
@@ -10,7 +10,6 @@ import {
 import SidebarFilters from "@/components/SidebarFilters";
 import ExcelSheet, { Lead } from "@/components/ExcelSheet";
 import HeaderBar from "@/components/HeaderBar";
-import GoogleFeedbackModal from "@/components/GoogleFeedbackModal";
 import FloatingFeedbackButton from "@/components/FloatingFeedbackButton";
 
 const GOOGLE_FORM_URL = "https://forms.gle/GaYQagiozAqDe1Nw6";
@@ -24,10 +23,6 @@ export default function DashboardPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
-
-  // Feedback Modal State & Ref for Callback Execution
-  const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
-  const pendingDownloadRef = useRef<(() => void) | null>(null);
 
   const handleToggleSelect = (id: number | string) => {
     setLeads((prev) =>
@@ -138,21 +133,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Jab user HeaderBar se Export click karega
-  const handleExportRequested = (callbackToDownload: () => void) => {
-    pendingDownloadRef.current = callbackToDownload;
-    setShowFeedbackModal(true);
-  };
-
-  // Feedback form submit hote hi auto-download trigger
-  const handleFeedbackSuccess = () => {
-    setShowFeedbackModal(false);
-    if (pendingDownloadRef.current) {
-      pendingDownloadRef.current();
-      pendingDownloadRef.current = null;
-    }
-  };
-
   const selectedCount = leads.filter((l) => l.selected).length;
 
   return (
@@ -161,7 +141,6 @@ export default function DashboardPage() {
         selectedCount={selectedCount}
         totalCount={leads.length}
         leadsData={leads}
-        onExportCheck={handleExportRequested}
       />
 
       <FloatingFeedbackButton formUrl={GOOGLE_FORM_URL} />
@@ -254,12 +233,6 @@ export default function DashboardPage() {
           />
         </main>
       </div>
-
-      <GoogleFeedbackModal
-        isOpen={showFeedbackModal}
-        formUrl={GOOGLE_FORM_URL}
-        onSuccess={handleFeedbackSuccess}
-      />
 
       {loading && (
         <div

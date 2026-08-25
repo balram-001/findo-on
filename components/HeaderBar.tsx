@@ -33,7 +33,6 @@ export interface HeaderBarProps {
   selectedCount?: number;
   totalCount?: number;
   leadsData?: Lead[];
-  onExportCheck?: (callbackToDownload: () => void) => void;
 }
 
 const INDIAN_STD_CODES = new Set([
@@ -54,7 +53,6 @@ export default function HeaderBar({
   selectedCount = 0,
   totalCount = 0,
   leadsData = [],
-  onExportCheck,
 }: HeaderBarProps) {
 
   const getPhoneExportDetails = (lead: Lead) => {
@@ -136,11 +134,7 @@ export default function HeaderBar({
       return;
     }
 
-    if (onExportCheck) {
-      onExportCheck(executeDownload);
-    } else {
-      executeDownload();
-    }
+    executeDownload();
   };
 
   return (
