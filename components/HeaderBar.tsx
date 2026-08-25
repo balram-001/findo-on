@@ -3,7 +3,6 @@
 import React from "react";
 import { Download, Database, CheckCircle2 } from "lucide-react";
 
-// Interface definition for Lead items
 export interface Lead {
   id: number | string;
   companyName?: string;
@@ -18,13 +17,17 @@ export interface Lead {
   isWhatsapp?: boolean;
   is_whatsapp?: boolean;
   website?: string;
+  websiteKind?: string;
   gstin?: string;
+  gstStatus?: string | boolean;
+  gstCheck?: string;
+  leadScore?: number;
+  leadTier?: "A" | "B" | "C" | string;
   whatsappLink?: string;
   whatsapp_link?: string;
   selected?: boolean;
 }
 
-// Props Interface with onExportCheck added
 export interface HeaderBarProps {
   selectedCount?: number;
   totalCount?: number;
@@ -39,7 +42,6 @@ export default function HeaderBar({
   onExportCheck,
 }: HeaderBarProps) {
 
-  // Real Excel/CSV Export Execution
   const executeDownload = () => {
     if (!leadsData || leadsData.length === 0) {
       alert("Export karne ke liye koi leads available nahi hain!");
@@ -49,41 +51,70 @@ export default function HeaderBar({
     const selectedLeads = leadsData.filter((l) => l.selected);
     const dataToExport = selectedLeads.length > 0 ? selectedLeads : leadsData;
 
+    // Exact Table Headers matching the UI
     const headers = [
-      "S.No",
-      "Company Name",
-      "Category",
-      "Phone Number",
-      "Phone Type",
-      "Is WhatsApp",
-      "City / Location",
-      "Website",
+      "S.NO",
+      "COMPANY NAME",
+      "INDUSTRY",
+      "CATEGORY",
+      "PHONE NUMBER",
+      "NUMBER TYPE",
+      "WEB / SOURCE",
+      "LOCATION",
+      "QUALITY",
       "GSTIN",
-      "WhatsApp Link"
+      "GST CHECK"
     ];
 
     const rows = dataToExport.map((item, index) => {
+      // 1. Phone number & Type parsing
+      const rawPhone = String(item.phone || "").trim();
+      const digits = rawPhone.replace(/\D/g, "").replace(/^91/, "").replace(/^0+/, "");
+      const isMobile = digits.length === 10 && /^[6-9]/.test(digits);
+
+      const phoneFormatted = isMobile
+        ? `+91 ${digits}`
+        : rawPhone && rawPhone !== "N/A"
+        ? rawPhone
+        : "N/A";
+
+      const numberType = isMobile
+        ? "WhatsApp"
+        : rawPhone && rawPhone !== "N/A"
+        ? "Landline"
+        : "N/A";
+
+      // 2. Exact UI field values
       const company = `"${(item.companyName || item.company_name || "N/A").replace(/"/g, '""')}"`;
-      const category = `"${(item.category || item.industry || "General").replace(/"/g, '""')}"`;
-      const phone = `"'${item.phone || "N/A"}"`;
-      const phoneType = `"${item.phoneType || item.phone_type || "Mobile"}"`;
-      const isWhatsapp = item.isWhatsapp || item.is_whatsapp ? "Yes" : "No";
-      const location = `"${(item.location || item.city || "Indore").replace(/"/g, '""')}"`;
-      const website = `"${item.website || ""}"`;
-      const gstin = `"${item.gstin || ""}"`;
-      const waLink = `"${item.whatsappLink || item.whatsapp_link || ""}"`;
+      const industry = `"${(item.industry || "N/A").replace(/"/g, '""')}"`;
+      const category = `"${(item.category || "N/A").replace(/"/g, '""')}"`;
+      const phone = `"${phoneFormatted}"`;
+      const type = `"${numberType}"`;
+      const webSource = `"${(item.website && item.website !== "N/A" ? item.website : "N/A").replace(/"/g, '""')}"`;
+      const location = `"${(item.location || item.city || "N/A").replace(/"/g, '""')}"`;
+      
+      const tier = item.leadTier || (item.leadScore && item.leadScore >= 70 ? "A" : item.leadScore && item.leadScore >= 45 ? "B" : "C");
+      const score = item.leadScore ? item.leadScore : "-";
+      const quality = `"${tier} ${score}"`;
+
+      const gstin = `"${(item.gstin && item.gstin !== "N/A" ? item.gstin : "N/A").replace(/"/g, '""')}"`;
+      const gstStatus = item.gstin && item.gstin !== "N/A"
+        ? (item.gstStatus === "ACTIVE" ? "ACTIVE" : "UNVERIFIED")
+        : "UNVERIFIED";
+      const gstCheck = `"${gstStatus}"`;
 
       return [
         index + 1,
         company,
+        industry,
         category,
         phone,
-        phoneType,
-        isWhatsapp,
+        type,
+        webSource,
         location,
-        website,
+        quality,
         gstin,
-        waLink
+        gstCheck
       ].join(",");
     });
 
@@ -91,9 +122,9 @@ export default function HeaderBar({
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    
+
     const fileName = `Findo_Leads_${new Date().toISOString().split("T")[0]}.csv`;
-    
+
     link.setAttribute("href", url);
     link.setAttribute("download", fileName);
     document.body.appendChild(link);
