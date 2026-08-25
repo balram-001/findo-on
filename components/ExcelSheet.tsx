@@ -20,7 +20,6 @@ import {
   Building2,
   Folder,
   MapPin,
-  ExternalLink,
 } from "lucide-react";
 
 export interface Lead {
@@ -52,7 +51,7 @@ export interface Lead {
   selected?: boolean;
 }
 
-interface ExcelSheetProps {
+export interface ExcelSheetProps {
   leads?: Lead[];
   rawLeads?: Lead[];
   data?: Lead[];
@@ -61,6 +60,7 @@ interface ExcelSheetProps {
   onToggleSelect?: (id: number | string) => void;
   onToggleAll?: (ids: Array<number | string>) => void;
   setLeads?: React.Dispatch<React.SetStateAction<Lead[]>>;
+  onExportCheck?: (callbackToDownload: () => void) => void;
 }
 
 const INDIAN_STD_CODES = new Set([

@@ -24,31 +24,31 @@ export interface Lead {
   selected?: boolean;
 }
 
-// Props Interface with leadsData added!
-interface HeaderBarProps {
+// Props Interface with onExportCheck added
+export interface HeaderBarProps {
   selectedCount?: number;
   totalCount?: number;
   leadsData?: Lead[];
+  onExportCheck?: (callbackToDownload: () => void) => void;
 }
 
 export default function HeaderBar({
   selectedCount = 0,
   totalCount = 0,
   leadsData = [],
+  onExportCheck,
 }: HeaderBarProps) {
 
-  // Real Excel/CSV Export Handler
-  const handleExportExcel = () => {
+  // Real Excel/CSV Export Execution
+  const executeDownload = () => {
     if (!leadsData || leadsData.length === 0) {
       alert("Export karne ke liye koi leads available nahi hain!");
       return;
     }
 
-    // Filter selected leads if any are checked, otherwise export all loaded leads
     const selectedLeads = leadsData.filter((l) => l.selected);
     const dataToExport = selectedLeads.length > 0 ? selectedLeads : leadsData;
 
-    // 1. Define CSV Headers
     const headers = [
       "S.No",
       "Company Name",
@@ -62,11 +62,10 @@ export default function HeaderBar({
       "WhatsApp Link"
     ];
 
-    // 2. Format Rows for Excel
     const rows = dataToExport.map((item, index) => {
       const company = `"${(item.companyName || item.company_name || "N/A").replace(/"/g, '""')}"`;
-      const category = `"${(item.category || item.industry || "Textile").replace(/"/g, '""')}"`;
-      const phone = `"'${item.phone || "N/A"}"`; // Leading single quote keeps phone formatting clean in Excel
+      const category = `"${(item.category || item.industry || "General").replace(/"/g, '""')}"`;
+      const phone = `"'${item.phone || "N/A"}"`;
       const phoneType = `"${item.phoneType || item.phone_type || "Mobile"}"`;
       const isWhatsapp = item.isWhatsapp || item.is_whatsapp ? "Yes" : "No";
       const location = `"${(item.location || item.city || "Indore").replace(/"/g, '""')}"`;
@@ -88,15 +87,12 @@ export default function HeaderBar({
       ].join(",");
     });
 
-    // 3. Create CSV Content with UTF-8 BOM for Excel formatting
     const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
-
-    // 4. Trigger Direct File Download (.csv opens directly in Excel)
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     
-    const fileName = `Textile_Leads_Indore_${new Date().toISOString().split("T")[0]}.csv`;
+    const fileName = `Findo_Leads_${new Date().toISOString().split("T")[0]}.csv`;
     
     link.setAttribute("href", url);
     link.setAttribute("download", fileName);
@@ -106,6 +102,14 @@ export default function HeaderBar({
     URL.revokeObjectURL(url);
   };
 
+  const handleExportExcel = () => {
+    if (onExportCheck) {
+      onExportCheck(executeDownload);
+    } else {
+      executeDownload();
+    }
+  };
+
   return (
     <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm">
       <div className="flex items-center gap-3">
@@ -113,8 +117,8 @@ export default function HeaderBar({
           <Database className="w-5 h-5" />
         </div>
         <div>
-          <h1 className="text-base font-bold text-slate-900">B2B Lead Extractor Dashboard</h1>
-          <p className="text-xs text-slate-500">Live Active Leads from Supabase Database</p>
+          <h1 className="text-base font-bold text-slate-900">Findo-On B2B Lead Extractor</h1>
+          <p className="text-xs text-slate-500">Live Active Leads from Verified Database</p>
         </div>
       </div>
 
@@ -128,8 +132,8 @@ export default function HeaderBar({
           </div>
         </div>
 
-        {/* Updated Clean Export Button */}
         <button
+          type="button"
           onClick={handleExportExcel}
           className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 py-2 rounded-lg text-xs font-bold transition shadow-sm cursor-pointer"
         >

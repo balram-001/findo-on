@@ -11,8 +11,8 @@ import SidebarFilters from "@/components/SidebarFilters";
 import ExcelSheet, { Lead } from "@/components/ExcelSheet";
 import HeaderBar from "@/components/HeaderBar";
 import GoogleFeedbackModal from "@/components/GoogleFeedbackModal";
+import FloatingFeedbackButton from "@/components/FloatingFeedbackButton";
 
-// TODO: Apna Google Form Short Link yahan paste karein
 const GOOGLE_FORM_URL = "https://forms.gle/vZMwAeDgXVV375BK7";
 
 export default function DashboardPage() {
@@ -23,12 +23,11 @@ export default function DashboardPage() {
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
-
-  // Default open
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
-  // Feedback Modal State
+  // Feedback Modal State & Callback Store
   const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
+  const [pendingExportCallback, setPendingExportCallback] = useState<(() => void) | null>(null);
 
   const handleToggleSelect = (id: number | string) => {
     setLeads((prev) =>
@@ -66,8 +65,26 @@ export default function DashboardPage() {
     );
   };
 
-  // Internal function for actual data fetching
-  const executeFetchLeads = async () => {
+  // Direct Fetch Leads (Bina kisi popup ke load hoga)
+  const handleFetchLeads = async () => {
+    if (!city.trim() && selectedIndustries.length === 0) {
+      setLeads([]);
+      alert("Kripya lead fetch karne se pehle City aur Industry dono select karein.");
+      return;
+    }
+
+    if (!city.trim()) {
+      setLeads([]);
+      alert("Kripya lead fetch karne se pehle City select ya type karein.");
+      return;
+    }
+
+    if (selectedIndustries.length === 0) {
+      setLeads([]);
+      alert("Kripya lead fetch karne se pehle kam se kam ek Industry select ya type karein.");
+      return;
+    }
+
     setLeads([]);
     setLoading(true);
 
@@ -122,36 +139,25 @@ export default function DashboardPage() {
     }
   };
 
-  // Main trigger: Checks for feedback first
-  const handleFetchLeads = async () => {
-    if (!city.trim() && selectedIndustries.length === 0) {
-      setLeads([]);
-      alert("Kripya lead fetch karne se pehle City aur Industry dono select karein.");
-      return;
-    }
-
-    if (!city.trim()) {
-      setLeads([]);
-      alert("Kripya lead fetch karne se pehle City select ya type karein.");
-      return;
-    }
-
-    if (selectedIndustries.length === 0) {
-      setLeads([]);
-      alert("Kripya lead fetch karne se pehle kam se kam ek Industry select ya type karein.");
-      return;
-    }
-
-    // Check LocalStorage for previous feedback submission
+  // Jab user Export / Download par click karega
+  const handleExportRequested = (callbackToDownload: () => void) => {
     const isFeedbackGiven = typeof window !== "undefined" && localStorage.getItem("leadflow_feedback_given");
 
     if (!isFeedbackGiven) {
+      setPendingExportCallback(() => callbackToDownload);
       setShowFeedbackModal(true);
       return;
     }
 
-    // If feedback is already submitted, fetch directly
-    executeFetchLeads();
+    callbackToDownload();
+  };
+
+  const handleFeedbackSuccess = () => {
+    setShowFeedbackModal(false);
+    if (pendingExportCallback) {
+      pendingExportCallback();
+      setPendingExportCallback(null);
+    }
   };
 
   const selectedCount = leads.filter((l) => l.selected).length;
@@ -162,7 +168,11 @@ export default function DashboardPage() {
         selectedCount={selectedCount}
         totalCount={leads.length}
         leadsData={leads}
+        onExportCheck={handleExportRequested}
       />
+
+      {/* Side Floating Feedback Button */}
+      <FloatingFeedbackButton formUrl={GOOGLE_FORM_URL} />
 
       {/* Top Controls Bar */}
       <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center justify-between shrink-0 shadow-2xs z-20">
@@ -252,6 +262,7 @@ export default function DashboardPage() {
             onToggleSelect={handleToggleSelect}
             onToggleAll={handleToggleAll}
             setLeads={setLeads}
+            onExportCheck={handleExportRequested}
           />
         </main>
       </div>
@@ -260,10 +271,7 @@ export default function DashboardPage() {
       <GoogleFeedbackModal
         isOpen={showFeedbackModal}
         formUrl={GOOGLE_FORM_URL}
-        onSuccess={() => {
-          setShowFeedbackModal(false);
-          executeFetchLeads();
-        }}
+        onSuccess={handleFeedbackSuccess}
       />
 
       {/* Loading Overlay */}
