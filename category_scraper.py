@@ -1,6 +1,5 @@
 import os
 import re
-import time
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
@@ -19,66 +18,33 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-TARGET_FRESH_PER_INDUSTRY = 30
+TARGET_LEADS = 20
+INDUSTRY_NAME = "Pharmaceuticals & Healthcare Manufacturing"
 
-# Exact 5 Manufacturing Industries matching your Dashboard Dropdown
-INDUSTRIES_CONFIG = [
-    {
-        "industry": "Automobile & Auto Components",
-        "queries": [
-            ("CNC Precision Machined Components", "CNC machined automobile parts components manufacturing plant Sanwer Road Indore"),
-            ("Sheet Metal & Press Components", "automotive sheet metal stamping press shop factory Indore Sector C"),
-            ("Industrial Fasteners & Bolts", "high tensile industrial fasteners bolts nuts manufacturer Indore Palda"),
-            ("Hydraulic Cylinders & Power Packs", "hydraulic cylinder equipment manufacturing unit Polo Ground Indore")
-        ]
-    },
-    {
-        "industry": "Pharmaceuticals & Healthcare Manufacturing",
-        "queries": [
-            ("Sterile Injectables & Liquid Orals", "pharma liquid orals syrup injectable formulation plant Indore"),
-            ("Ayurvedic & Herbal Formulations", "GMP certified herbal ayurvedic extract manufacturing factory Indore"),
-            ("Bulk Drugs & Active Intermediates", "bulk drug pharmaceutical chemical intermediate plant Sanwer Road Indore"),
-            ("Veterinary Formulations & Feed Supplements", "veterinary medicines formulation animal health plant Indore")
-        ]
-    },
-    {
-        "industry": "Chemical Manufacturing & Allied Industries",
-        "queries": [
-            ("Industrial Resins & Adhesives", "synthetic resin industrial adhesive manufacturing factory Indore Palda"),
-            ("Water Treatment & Cooling Chemicals", "industrial RO water treatment chemicals manufacturing Indore"),
-            ("Construction Admixtures & Waterproofing", "construction chemicals waterproofing admixture plant Indore Sanwer Road"),
-            ("Specialty Polymer Masterbatches", "color masterbatch polymer compound manufacturing plant Indore")
-        ]
-    },
-    {
-        "industry": "Packaging, Plastics & Paper Manufacturing",
-        "queries": [
-            ("Corrugated Boxes & Heavy Duty Cartons", "corrugated packaging boxes manufacturing plant Indore Palda"),
-            ("Plastic Injection Moulded Parts", "plastic injection moulding factory components manufacturer Indore"),
-            ("Flexible Pouches & Lamination Rolls", "printed laminated flexible packaging pouch manufacturer Indore Sanwer Road"),
-            ("HDPE Blow Moulded Containers & Bottles", "HDPE blow moulding plastic bottles containers plant Indore")
-        ]
-    },
-    {
-        "industry": "Food Processing & Agro Manufacturing",
-        "queries": [
-            ("Soya Extraction & Refining Mill", "soybean extraction oil refinery processing plant Indore Palda"),
-            ("Flour & Pulse Processing Mills", "automatic roller flour mill dal processing plant Sanwer Road Indore"),
-            ("Industrial Namkeen & Snacks Plant", "namkeen snacks manufacturing unit cluster Indore Nemawar Road"),
-            ("Spices Grinding & Agro Processing", "spices grinding processing manufacturing factory Indore Siyaganj")
-        ]
-    }
+# 14+ Broad & High-Yield Pharma Manufacturing Queries for Indore Clusters
+EXPANDED_PHARMA_QUERIES = [
+    ("Pharmaceutical Formulations & Tablets", "pharmaceutical manufacturers Sanwer Road Indore"),
+    ("Sterile Injectables & Liquid Orals", "pharma formulation plant Indore"),
+    ("Ayurvedic & Herbal Formulations", "ayurvedic medicine manufacturers Indore"),
+    ("Bulk Drugs & Active Intermediates", "bulk drug pharma chemicals manufacturing Indore"),
+    ("Ayurvedic & Herbal Extracts", "herbal extract manufacturer Sanwer Road Indore"),
+    ("Surgical & Medical Disposables", "surgical dressing bandage manufacturer Indore"),
+    ("Homeopathic & Natural Remedies", "homeopathic medicine manufacturing laboratory Indore"),
+    ("Veterinary Formulations", "veterinary pharmaceuticals manufacturing plant Indore"),
+    ("Nutraceuticals & Health Supplements", "nutraceutical dietary supplements manufacturer Indore"),
+    ("Cosmeceuticals & Derma Products", "cosmetic pharma manufacturing plant Indore"),
+    ("Pharma Liquid Orals & Syrups", "liquid orals pharmaceutical laboratory Polo Ground Indore"),
+    ("Pharma Cleanroom & Medical Devices", "medical device disposables manufacturer Indore"),
+    ("Ayurvedic Oils & Churna Factory", "ayurvedic pharmacy manufacturing unit Palda Indore"),
+    ("Pharmaceutical Contract Manufacturers", "pharma third party manufacturing Indore")
 ]
 
-# Strict Discard Terms (No shops, traders, or dealers)
 EXCLUDE_TERMS = [
-    "shop", "store", "retailer", "retail", "trader", "trading", "dealer", "dealership",
-    "showroom", "distributor", "wholesaler", "wholesale", "repair", "service center",
-    "pesticide shop", "paint shop", "hardware", "restaurant", "hotel", "cafe", "kirana",
-    "agency", "reseller", "mart", "stationery", "chemist shop", "medical store"
+    "retail shop", "medical store", "pharmacy", "clinic", "hospital",
+    "doctor", "pathology", "diagnostic", "chemist shop", "kirana", "hotel"
 ]
 
-def is_valid_manufacturer(name: str, category_tag: str) -> bool:
+def is_valid_pharma_unit(name: str, category_tag: str) -> bool:
     combined = f"{name} {category_tag}".lower()
     for bad in EXCLUDE_TERMS:
         if re.search(rf"\b{bad}\b", combined):
@@ -119,27 +85,20 @@ def scrape_deep_website_contact(url: str):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-
     pages_to_check = [url]
 
-    # Auto detect Contact-Us Link
     try:
         resp = requests.get(url, headers=headers, timeout=4)
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
-            for a in soup.find_all("a", href=True):
-                href = a["href"].strip()
-                text = a.get_text().lower()
+            for a_tag in soup.find_all("a", href=True):
+                href = a_tag["href"].strip()
+                text = a_tag.get_text().lower()
                 if any(k in href.lower() or k in text for k in ["contact", "contact-us", "reach-us", "about-us"]):
                     c_url = urllib.parse.urljoin(url, href)
                     if c_url not in pages_to_check and c_url.startswith("http"):
                         pages_to_check.append(c_url)
                         break
-
-            if len(pages_to_check) == 1:
-                base_domain = f"{urllib.parse.urlsplit(url).scheme}://{urllib.parse.urlsplit(url).netloc}"
-                pages_to_check.append(f"{base_domain}/contact-us")
-                pages_to_check.append(f"{base_domain}/contact")
     except Exception:
         return None, None
 
@@ -154,13 +113,11 @@ def scrape_deep_website_contact(url: str):
             text = r.text
             soup = BeautifulSoup(text, "html.parser")
 
-            # WhatsApp Search
             if not found_wa:
                 wa_match = re.search(r"(?:api\.whatsapp\.com/send\?phone=|wa\.me/)(\+?\d{10,13})", text, re.IGNORECASE)
                 if wa_match:
                     found_wa = clean_phone_number(wa_match.group(1))
 
-            # 'tel:' links
             if not found_mob:
                 for tel in soup.select('a[href^="tel:"]'):
                     cleaned = clean_phone_number(tel["href"].replace("tel:", ""))
@@ -168,7 +125,6 @@ def scrape_deep_website_contact(url: str):
                         found_mob = cleaned
                         break
 
-            # Regex on visible body text
             if not found_mob:
                 mobiles = re.findall(r"(?:(?:\+91|0)?[6-9]\d{9})", soup.get_text())
                 for m in mobiles:
@@ -184,157 +140,147 @@ def scrape_deep_website_contact(url: str):
 
     return found_mob, found_wa
 
-def run_30_fresh_leads_per_industry():
-    print("Connecting to Supabase to fetch existing leads (Duplicate Prevention)...")
+def run_pharma_expanded():
+    print("Connecting to Supabase to fetch existing leads for deduplication...")
     existing = supabase.table("active_leads").select("company_name, phone").execute().data or []
     
     seen_names = set([re.sub(r"\s+", " ", r.get("company_name", "").lower().strip()) for r in existing if r.get("company_name")])
     seen_phones = set([clean_phone_number(r.get("phone", "")) for r in existing if r.get("phone") and clean_phone_number(r.get("phone", "")) != "N/A"])
 
-    print(f"Loaded {len(seen_names)} existing companies & {len(seen_phones)} unique phone records.\n" + "="*65)
+    print(f"Loaded {len(seen_names)} existing companies & {len(seen_phones)} unique phone records.")
+    print(f"Target: Fetching {TARGET_LEADS} unique leads for [{INDUSTRY_NAME}]\n" + "="*65)
+
+    saved_count = 0
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, slow_mo=50)
+        browser = p.chromium.launch(headless=False)
         context = browser.new_context(viewport={"width": 1366, "height": 768})
         page = context.new_page()
 
-        for config in INDUSTRIES_CONFIG:
-            industry_name = config["industry"]
-            saved_in_this_ind = 0
+        for category_name, query_str in EXPANDED_PHARMA_QUERIES:
+            if saved_count >= TARGET_LEADS:
+                break
 
-            print(f"\n🚀 STARTING INDUSTRY: [{industry_name.upper()}] (Target: 30 Fresh Leads)")
-            print("="*65)
+            print(f"\nSearching: {category_name} -> {query_str}")
+            maps_url = f"https://www.google.com/maps/search/{urllib.parse.quote_plus(query_str)}"
+            
+            try:
+                page.goto(maps_url, timeout=25000)
+                page.wait_for_timeout(3000)
+            except Exception:
+                continue
 
-            for category_name, query_str in config["queries"]:
-                if saved_in_this_ind >= TARGET_FRESH_PER_INDUSTRY:
+            try:
+                feed = page.locator('div[role="feed"]').first
+                if feed.is_visible(timeout=4000):
+                    for _ in range(4):
+                        feed.evaluate("el => el.scrollTop += 1800")
+                        page.wait_for_timeout(900)
+            except Exception:
+                pass
+
+            cards = page.locator('a.hfpxzc').all()
+            if not cards:
+                cards = page.locator('div[role="feed"] a[href*="/maps/place/"]').all()
+
+            for card in cards:
+                if saved_count >= TARGET_LEADS:
                     break
-
-                print(f"\n🔎 Category: {category_name} | Query: {query_str}")
-                maps_url = f"https://www.google.com/maps/search/{urllib.parse.quote_plus(query_str)}"
-                
                 try:
-                    page.goto(maps_url, timeout=20000)
-                    page.wait_for_timeout(2500)
+                    card.click(timeout=3000)
+                    page.wait_for_timeout(1500)
+
+                    name_el = page.locator('h1.DUwDvf').first
+                    if not name_el.is_visible(timeout=1500):
+                        continue
+                    company_name = re.sub(r"\s+", " ", name_el.inner_text()).strip()
+                    norm_name = company_name.lower().strip()
+
+                    if norm_name in seen_names or len(company_name) < 3:
+                        continue
+
+                    category_tag = ""
+                    cat_btn = page.locator('button[jsaction*="category"]').first
+                    if cat_btn.is_visible(timeout=800):
+                        category_tag = cat_btn.inner_text().strip()
+
+                    if not is_valid_pharma_unit(company_name, category_tag):
+                        continue
+
+                    addr_btn = page.locator('button[data-item-id="address"]').first
+                    location_text = "Indore, Madhya Pradesh"
+                    if addr_btn.is_visible(timeout=800):
+                        raw_addr = addr_btn.inner_text().replace("Address:", "").replace("Directions", "").strip()
+                        raw_addr = re.sub(r"^[^a-zA-Z0-9]+", "", raw_addr)
+                        if len(raw_addr) > 5:
+                            location_text = raw_addr
+
+                    website = None
+                    web_btn = page.locator('a[data-item-id="authority"]').first
+                    if web_btn.is_visible(timeout=800):
+                        href = web_btn.get_attribute("href")
+                        if href and href.startswith("http"):
+                            website = href
+
+                    map_phone = "N/A"
+                    phone_btn = page.locator('button[data-item-id*="phone"]').first
+                    if phone_btn.is_visible(timeout=800):
+                        map_phone = clean_phone_number(phone_btn.inner_text())
+
+                    final_phone = "N/A"
+                    whatsapp_link = "N/A"
+
+                    # Crawl website Contact Us page
+                    if website:
+                        site_mob, site_wa = scrape_deep_website_contact(website)
+                        if site_mob:
+                            final_phone = site_mob
+                        if site_wa:
+                            whatsapp_link = f"https://wa.me/{site_wa.replace('+', '')}"
+
+                    if final_phone == "N/A":
+                        final_phone = map_phone
+
+                    num_type = get_number_type(final_phone)
+                    if final_phone != "N/A" and whatsapp_link == "N/A" and num_type == "Mobile / WhatsApp":
+                        whatsapp_link = f"https://wa.me/{final_phone.replace('+', '')}"
+
+                    if final_phone != "N/A" and final_phone in seen_phones:
+                        continue
+
+                    row_data = {
+                        "company_name": company_name,
+                        "industry": INDUSTRY_NAME,
+                        "category": category_name,
+                        "phone": final_phone,
+                        "phone_type": num_type,
+                        "website": website,
+                        "location": location_text,
+                        "city": "Indore",
+                        "whatsapp_link": whatsapp_link,
+                        "created_at": "now()"
+                    }
+
+                    supabase.table("active_leads").upsert(
+                        row_data,
+                        on_conflict="company_name,city,phone"
+                    ).execute()
+
+                    seen_names.add(norm_name)
+                    if final_phone != "N/A":
+                        seen_phones.add(final_phone)
+
+                    saved_count += 1
+                    print(f"[{saved_count}/{TARGET_LEADS}] Saved: {company_name}")
+                    print(f"   Category: {category_name}")
+                    print(f"   Phone   : {final_phone} ({num_type})")
+                    print(f"   Website : {website or 'N/A'}\n")
+
                 except Exception:
                     continue
 
-                try:
-                    feed = page.locator('div[role="feed"]').first
-                    if feed.is_visible(timeout=3000):
-                        for _ in range(5):
-                            feed.evaluate("el => el.scrollTop += 2200")
-                            page.wait_for_timeout(800)
-                except Exception:
-                    pass
-
-                cards = page.locator('div[role="feed"] a[href*="/maps/place/"]').all()
-                if not cards:
-                    cards = page.locator('a.hfpxzc').all()
-
-                for card in cards:
-                    if saved_in_this_ind >= TARGET_FRESH_PER_INDUSTRY:
-                        break
-                    try:
-                        card.click(timeout=3000)
-                        page.wait_for_timeout(1000)
-
-                        name_el = page.locator('h1.DUwDvf').first
-                        if not name_el.is_visible(timeout=1200):
-                            continue
-                        company_name = re.sub(r"\s+", " ", name_el.inner_text()).strip()
-                        norm_name = company_name.lower().strip()
-
-                        if norm_name in seen_names or "results" in norm_name or len(company_name) < 3:
-                            continue
-
-                        category_tag = ""
-                        cat_btn = page.locator('button[jsaction*="category"]').first
-                        if cat_btn.is_visible(timeout=600):
-                            category_tag = cat_btn.inner_text().strip()
-
-                        if not is_valid_manufacturer(company_name, category_tag):
-                            continue
-
-                        addr_btn = page.locator('button[data-item-id="address"]').first
-                        location_text = "Indore, Madhya Pradesh"
-                        if addr_btn.is_visible(timeout=800):
-                            raw_addr = addr_btn.inner_text().replace("Address:", "").replace("Directions", "").strip()
-                            raw_addr = re.sub(r"^[^a-zA-Z0-9]+", "", raw_addr)
-                            if len(raw_addr) > 8:
-                                location_text = raw_addr
-
-                        addr_lower = (location_text + " " + company_name).lower()
-                        if any(x in addr_lower for x in ["pithampur", "dhar", "dewas", "ujjain", "bhopal"]):
-                            continue
-
-                        website = None
-                        web_btn = page.locator('a[data-item-id="authority"]').first
-                        if web_btn.is_visible(timeout=600):
-                            href = web_btn.get_attribute("href")
-                            if href and href.startswith("http"):
-                                website = href
-
-                        map_phone = "N/A"
-                        phone_btn = page.locator('button[data-item-id*="phone"]').first
-                        if phone_btn.is_visible(timeout=600):
-                            map_phone = clean_phone_number(phone_btn.inner_text())
-
-                        final_phone = "N/A"
-                        whatsapp_link = "N/A"
-
-                        # Deep Contact-Us Extraction from Official Website
-                        if website:
-                            site_mob, site_wa = scrape_deep_website_contact(website)
-                            if site_mob:
-                                final_phone = site_mob
-                            if site_wa:
-                                whatsapp_link = f"https://wa.me/{site_wa.replace('+', '')}"
-
-                        if final_phone == "N/A":
-                            final_phone = map_phone
-
-                        num_type = get_number_type(final_phone)
-                        if final_phone != "N/A" and whatsapp_link == "N/A" and num_type == "Mobile / WhatsApp":
-                            whatsapp_link = f"https://wa.me/{final_phone.replace('+', '')}"
-
-                        if final_phone != "N/A" and final_phone in seen_phones:
-                            continue
-
-                        row_data = {
-                            "company_name": company_name,
-                            "industry": industry_name,
-                            "category": category_name,
-                            "phone": final_phone,
-                            "phone_type": num_type,
-                            "website": website,
-                            "location": location_text,
-                            "city": "Indore",
-                            "whatsapp_link": whatsapp_link,
-                            "created_at": "now()"
-                        }
-
-                        supabase.table("active_leads").upsert(
-                            row_data,
-                            on_conflict="company_name,city,phone"
-                        ).execute()
-
-                        seen_names.add(norm_name)
-                        if final_phone != "N/A":
-                            seen_phones.add(final_phone)
-
-                        saved_in_this_ind += 1
-                        print(f"  [{saved_in_this_ind}/{TARGET_FRESH_PER_INDUSTRY}] {company_name}")
-                        print(f"      🏷️ Category : {category_name}")
-                        print(f"      📞 Phone    : {final_phone} ({num_type})")
-                        print(f"      🌐 Website  : {website or 'N/A'}\n")
-
-                    except Exception:
-                        continue
-
-            print(f"✅ Completed 30 fresh leads for: {industry_name}")
-
         browser.close()
-        print("\n🎉 ALL 5 INDUSTRIES COMPLETED! Total 150 (30x5) brand new verified leads added.")
+        print(f"\nFinished: Successfully added {saved_count} unique leads for Pharma & Healthcare.")
 
 if __name__ == "__main__":
-    run_30_fresh_leads_per_industry()
+    run_pharma_expanded()
