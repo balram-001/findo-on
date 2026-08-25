@@ -51,7 +51,6 @@ export default function HeaderBar({
     const selectedLeads = leadsData.filter((l) => l.selected);
     const dataToExport = selectedLeads.length > 0 ? selectedLeads : leadsData;
 
-    // Exact Table Headers matching the UI
     const headers = [
       "S.NO",
       "COMPANY NAME",
@@ -67,22 +66,26 @@ export default function HeaderBar({
     ];
 
     const rows = dataToExport.map((item, index) => {
-      // 1. Phone number & Type parsing
+      // 1. Phone number classification
       const rawPhone = String(item.phone || "").trim();
       const digits = rawPhone.replace(/\D/g, "").replace(/^91/, "").replace(/^0+/, "");
-      const isMobile = digits.length === 10 && /^[6-9]/.test(digits);
+      
+      const isMissing = !rawPhone || rawPhone === "N/A" || rawPhone === "Missing" || digits.length === 0;
+      const isMobile = !isMissing && digits.length === 10 && /^[6-9]/.test(digits);
 
-      const phoneFormatted = isMobile
-        ? `+91 ${digits}`
-        : rawPhone && rawPhone !== "N/A"
-        ? rawPhone
-        : "N/A";
+      let phoneFormatted = "N/A";
+      let numberType = "Missing";
 
-      const numberType = isMobile
-        ? "WhatsApp"
-        : rawPhone && rawPhone !== "N/A"
-        ? "Landline"
-        : "N/A";
+      if (isMissing) {
+        phoneFormatted = "N/A";
+        numberType = "Missing";
+      } else if (isMobile) {
+        phoneFormatted = `+91 ${digits}`;
+        numberType = "WhatsApp";
+      } else {
+        phoneFormatted = rawPhone.startsWith("0") || rawPhone.startsWith("+") ? rawPhone : `0${digits}`;
+        numberType = "Landline";
+      }
 
       // 2. Exact UI field values
       const company = `"${(item.companyName || item.company_name || "N/A").replace(/"/g, '""')}"`;
