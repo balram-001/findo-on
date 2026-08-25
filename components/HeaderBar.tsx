@@ -36,6 +36,20 @@ export interface HeaderBarProps {
   onExportCheck?: (callbackToDownload: () => void) => void;
 }
 
+const INDIAN_STD_CODES = new Set([
+  "11", "22", "33", "44", "20", "40", "80", "79",
+  "120", "124", "129", "135", "141", "145", "161", "172", "181",
+  "231", "233", "240", "253", "261", "265", "281", "291", "294",
+  "413", "422", "431", "452", "471", "484",
+  "512", "522", "542", "562", "651", "657", "671", "674",
+  "712", "724", "729", "731", "733", "755", "761", "770",
+  "821", "824", "831", "836", "866", "870", "891",
+]);
+
+function hasIndianStdCode(nationalNumber: string) {
+  return [4, 3, 2].some((length) => INDIAN_STD_CODES.has(nationalNumber.slice(0, length)));
+}
+
 export default function HeaderBar({
   selectedCount = 0,
   totalCount = 0,
@@ -45,18 +59,18 @@ export default function HeaderBar({
 
   const getPhoneExportDetails = (lead: Lead) => {
     const original = String(lead.phone || "").trim();
+    const isMissing = !original || original.toLowerCase() === "n/a" || original.toLowerCase() === "missing";
     const digits = original.replace(/\D/g, "");
     const nationalNumber = digits.startsWith("91") && digits.length > 10 ? digits.slice(2) : digits.replace(/^0+/, "");
-    const isMobile = nationalNumber.length === 10 && /^[6-9]/.test(nationalNumber);
-    const phoneType = lead.phoneType || lead.phone_type || (isMobile ? "Mobile / WhatsApp" : original ? "Landline" : "N/A");
-    const phone = isMobile ? `+91 ${nationalNumber}` : original || "N/A";
-    const isWhatsapp = Boolean(lead.isWhatsapp || lead.is_whatsapp || isMobile);
+    const isLandline = nationalNumber.length === 10 && hasIndianStdCode(nationalNumber);
+    const isWhatsapp = nationalNumber.length === 10 && !isLandline && /^[6-9]/.test(nationalNumber);
+    const phoneType = isMissing ? "Missing" : isWhatsapp ? "WhatsApp" : "Landline";
+    const phone = isMissing ? "N/A" : isWhatsapp ? `+91 ${nationalNumber}` : isLandline ? `0${nationalNumber}` : original;
 
     return {
       phone,
       phoneType,
-      isWhatsapp: isWhatsapp ? "Yes" : "No",
-      whatsappLink: lead.whatsappLink || lead.whatsapp_link || (isMobile ? `https://wa.me/91${nationalNumber}` : "N/A"),
+      whatsappLink: isWhatsapp ? (lead.whatsappLink || lead.whatsapp_link || `https://wa.me/91${nationalNumber}`) : "N/A",
     };
   };
 
@@ -73,8 +87,8 @@ export default function HeaderBar({
     // of truncating them as the on-screen table does.
     const headers = [
       "S.No.", "Company Name", "Industry", "Category", "Phone Number",
-      "Number Type", "Is WhatsApp", "City / Location", "Website", "GSTIN",
-      "GST Check", "Quality", "WhatsApp Link",
+      "Number Type", "City / Location", "Website", "GSTIN", "GST Check",
+      "Quality", "WhatsApp Link",
     ];
     const rows = dataToExport.map((lead, index) => {
       const phoneDetails = getPhoneExportDetails(lead);
@@ -90,7 +104,6 @@ export default function HeaderBar({
         lead.category || "N/A",
         phoneDetails.phone,
         phoneDetails.phoneType,
-        phoneDetails.isWhatsapp,
         lead.location || lead.city || "N/A",
         lead.website || "N/A",
         gstin,
@@ -106,8 +119,8 @@ export default function HeaderBar({
     worksheet["!cols"] = [
       { wch: 8 },
       { wch: 32 }, { wch: 28 }, { wch: 28 }, { wch: 17 }, { wch: 19 },
-      { wch: 13 }, { wch: 36 }, { wch: 42 }, { wch: 18 }, { wch: 14 },
-      { wch: 12 }, { wch: 32 },
+      { wch: 36 }, { wch: 42 }, { wch: 18 }, { wch: 14 }, { wch: 12 },
+      { wch: 32 },
     ];
 
     const workbook = XLSX.utils.book_new();
