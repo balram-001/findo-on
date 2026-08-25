@@ -43,14 +43,21 @@ export default function HeaderBar({
   onExportCheck,
 }: HeaderBarProps) {
 
-  const toSafeSpreadsheetValue = (value: unknown): string | number | boolean => {
-    if (value === null || value === undefined) return "";
-    if (typeof value === "string") {
-      // Prevent spreadsheet formula execution when a lead field starts with a formula character.
-      return /^[=+\-@]/.test(value) ? `'${value}` : value;
-    }
-    if (typeof value === "number" || typeof value === "boolean") return value;
-    return JSON.stringify(value);
+  const getPhoneExportDetails = (lead: Lead) => {
+    const original = String(lead.phone || "").trim();
+    const digits = original.replace(/\D/g, "");
+    const nationalNumber = digits.startsWith("91") && digits.length > 10 ? digits.slice(2) : digits.replace(/^0+/, "");
+    const isMobile = nationalNumber.length === 10 && /^[6-9]/.test(nationalNumber);
+    const phoneType = lead.phoneType || lead.phone_type || (isMobile ? "Mobile / WhatsApp" : original ? "Landline" : "N/A");
+    const phone = isMobile ? `+91 ${nationalNumber}` : original || "N/A";
+    const isWhatsapp = Boolean(lead.isWhatsapp || lead.is_whatsapp || isMobile);
+
+    return {
+      phone,
+      phoneType,
+      isWhatsapp: isWhatsapp ? "Yes" : "No",
+      whatsappLink: lead.whatsappLink || lead.whatsapp_link || (isMobile ? `https://wa.me/91${nationalNumber}` : "N/A"),
+    };
   };
 
   const executeDownload = () => {
@@ -62,22 +69,45 @@ export default function HeaderBar({
     const selectedLeads = leadsData.filter((l) => l.selected);
     const dataToExport = selectedLeads.length > 0 ? selectedLeads : leadsData;
 
-    // Keep every original field as its own column. This avoids CSV parsing issues
-    // and makes the downloaded file import cleanly into Google Sheets and Excel.
-    const rawColumns = Array.from(
-      new Set(dataToExport.flatMap((lead) => Object.keys(lead)))
-    );
-    const rows = dataToExport.map((lead, index) => ({
-      "S.No.": index + 1,
-      ...Object.fromEntries(rawColumns.map((column) => [column, toSafeSpreadsheetValue(lead[column as keyof Lead])])),
-    }));
+    // Match the lead table exactly, while preserving full source values instead
+    // of truncating them as the on-screen table does.
+    const headers = [
+      "S.No.", "Company Name", "Industry", "Category", "Phone Number",
+      "Number Type", "Is WhatsApp", "City / Location", "Website", "GSTIN",
+      "GST Check", "Quality", "WhatsApp Link",
+    ];
+    const rows = dataToExport.map((lead, index) => {
+      const phoneDetails = getPhoneExportDetails(lead);
+      const leadScore = lead.leadScore || "-";
+      const leadTier = lead.leadTier || (typeof lead.leadScore === "number" && lead.leadScore >= 70 ? "A" : typeof lead.leadScore === "number" && lead.leadScore >= 45 ? "B" : "C");
+      const gstin = lead.gstin || "N/A";
+      const gstCheck = lead.gstCheck || lead.gstStatus || (gstin !== "N/A" ? "UNVERIFIED" : "N/A");
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+      return [
+        index + 1,
+        lead.companyName || lead.company_name || "N/A",
+        lead.industry || "N/A",
+        lead.category || "N/A",
+        phoneDetails.phone,
+        phoneDetails.phoneType,
+        phoneDetails.isWhatsapp,
+        lead.location || lead.city || "N/A",
+        lead.website || "N/A",
+        gstin,
+        String(gstCheck),
+        `${leadTier} ${leadScore}`,
+        phoneDetails.whatsappLink,
+      ];
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
     worksheet["!autofilter"] = { ref: XLSX.utils.encode_range(XLSX.utils.decode_range(worksheet["!ref"] || "A1")) };
     worksheet["!cols"] = [
       { wch: 8 },
-      ...rawColumns.map((column) => ({ wch: Math.min(Math.max(column.length + 2, 14), 32) })),
+      { wch: 32 }, { wch: 28 }, { wch: 28 }, { wch: 17 }, { wch: 19 },
+      { wch: 13 }, { wch: 36 }, { wch: 42 }, { wch: 18 }, { wch: 14 },
+      { wch: 12 }, { wch: 32 },
     ];
 
     const workbook = XLSX.utils.book_new();
