@@ -131,6 +131,11 @@ export default function HeaderBar({
   };
 
   const handleExportExcel = () => {
+    if (!leadsData || leadsData.length === 0) {
+      alert("Export karne ke liye koi leads available nahi hain!");
+      return;
+    }
+
     if (onExportCheck) {
       onExportCheck(executeDownload);
     } else {

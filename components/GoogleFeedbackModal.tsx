@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { FileText, CheckCircle2, ExternalLink } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { FileText, ExternalLink } from "lucide-react";
 
 interface GoogleFeedbackModalProps {
   isOpen: boolean;
@@ -15,24 +15,24 @@ export default function GoogleFeedbackModal({
   formUrl,
 }: GoogleFeedbackModalProps) {
   const [hasOpenedForm, setHasOpenedForm] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
+
+  useEffect(() => {
+    if (!isOpen || !hasOpenedForm) return;
+
+    const handleReturnToDashboard = () => {
+      localStorage.setItem("leadflow_feedback_given", "true");
+      onSuccess();
+    };
+
+    window.addEventListener("focus", handleReturnToDashboard, { once: true });
+    return () => window.removeEventListener("focus", handleReturnToDashboard);
+  }, [hasOpenedForm, isOpen, onSuccess]);
 
   if (!isOpen) return null;
 
   const handleOpenForm = () => {
     window.open(formUrl, "_blank");
     setHasOpenedForm(true);
-    setError("");
-  };
-
-  const handleUnlockAndDownload = () => {
-    if (!hasOpenedForm) {
-      setError("Kripya pehle upar diye gaye button se feedback form open karein.");
-      return;
-    }
-
-    localStorage.setItem("leadflow_feedback_given", "true");
-    onSuccess();
   };
 
   return (
@@ -46,14 +46,8 @@ export default function GoogleFeedbackModal({
           Quick Feedback Required
         </h3>
         <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-          Leads download karne ke liye 10 seconds ka feedback Google Form par dein. Feedback submit karte hi sheet automatically download ho jayegi.
+          Leads download karne ke liye 10 seconds ka feedback Google Form par dein. Submit karke dashboard tab par wapas aate hi Excel automatically download ho jayegi.
         </p>
-
-        {error && (
-          <div className="mt-3 rounded-lg bg-red-50 p-2 text-xs font-semibold text-red-600 border border-red-200">
-            {error}
-          </div>
-        )}
 
         <div className="mt-5 space-y-2.5">
           <button
@@ -61,24 +55,12 @@ export default function GoogleFeedbackModal({
             onClick={handleOpenForm}
             className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 transition active:scale-[0.98] cursor-pointer"
           >
-            <ExternalLink className="w-4 h-4" /> 1. Open Google Feedback Form
-          </button>
-
-          <button
-            type="button"
-            onClick={handleUnlockAndDownload}
-            className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition border cursor-pointer ${
-              hasOpenedForm
-                ? "bg-slate-900 text-white border-slate-900 hover:bg-slate-800 shadow-sm active:scale-[0.98]"
-                : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-            }`}
-          >
-            <CheckCircle2 className="w-4 h-4" /> 2. I Have Submitted → Auto Download Excel
+            <ExternalLink className="w-4 h-4" /> Open Google Feedback Form
           </button>
         </div>
 
         <p className="mt-3 text-[11px] text-slate-400">
-          Ek baar submit karne ke baad yeh popup dobara kabhi nahi aayega.
+          Form submit karke is dashboard tab par wapas aa jayein.
         </p>
       </div>
     </div>
