@@ -13,7 +13,7 @@ import HeaderBar from "@/components/HeaderBar";
 import GoogleFeedbackModal from "@/components/GoogleFeedbackModal";
 import FloatingFeedbackButton from "@/components/FloatingFeedbackButton";
 
-const GOOGLE_FORM_URL = "https://forms.gle/NkFAkfJpoTkNY2cf8";
+const GOOGLE_FORM_URL = "https://forms.gle/H9jrRe7GNAKrDimv8";
 
 export default function DashboardPage() {
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
