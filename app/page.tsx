@@ -140,17 +140,8 @@ export default function DashboardPage() {
 
   // Jab user HeaderBar se Export click karega
   const handleExportRequested = (callbackToDownload: () => void) => {
-    const isFeedbackGiven =
-      typeof window !== "undefined" &&
-      localStorage.getItem("leadflow_feedback_given");
-
-    if (!isFeedbackGiven) {
-      pendingDownloadRef.current = callbackToDownload;
-      setShowFeedbackModal(true);
-      return;
-    }
-
-    callbackToDownload();
+    pendingDownloadRef.current = callbackToDownload;
+    setShowFeedbackModal(true);
   };
 
   // Feedback form submit hote hi auto-download trigger

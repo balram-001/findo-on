@@ -20,7 +20,6 @@ export default function GoogleFeedbackModal({
     if (!isOpen || !hasOpenedForm) return;
 
     const handleReturnToDashboard = () => {
-      localStorage.setItem("leadflow_feedback_given", "true");
       onSuccess();
     };
 
