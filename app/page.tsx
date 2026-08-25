@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   Loader2,
   PanelLeftClose,
@@ -25,9 +25,9 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
-  // Feedback Modal State & Callback Store
+  // Feedback Modal State & Ref for Callback Execution
   const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
-  const [pendingExportCallback, setPendingExportCallback] = useState<(() => void) | null>(null);
+  const pendingDownloadRef = useRef<(() => void) | null>(null);
 
   const handleToggleSelect = (id: number | string) => {
     setLeads((prev) =>
@@ -65,7 +65,6 @@ export default function DashboardPage() {
     );
   };
 
-  // Direct Fetch Leads (Bina kisi popup ke load hoga)
   const handleFetchLeads = async () => {
     if (!city.trim() && selectedIndustries.length === 0) {
       setLeads([]);
@@ -139,12 +138,14 @@ export default function DashboardPage() {
     }
   };
 
-  // Jab user Export / Download par click karega
+  // Jab user HeaderBar se Export click karega
   const handleExportRequested = (callbackToDownload: () => void) => {
-    const isFeedbackGiven = typeof window !== "undefined" && localStorage.getItem("leadflow_feedback_given");
+    const isFeedbackGiven =
+      typeof window !== "undefined" &&
+      localStorage.getItem("leadflow_feedback_given");
 
     if (!isFeedbackGiven) {
-      setPendingExportCallback(() => callbackToDownload);
+      pendingDownloadRef.current = callbackToDownload;
       setShowFeedbackModal(true);
       return;
     }
@@ -152,11 +153,12 @@ export default function DashboardPage() {
     callbackToDownload();
   };
 
+  // Feedback form submit hote hi auto-download trigger
   const handleFeedbackSuccess = () => {
     setShowFeedbackModal(false);
-    if (pendingExportCallback) {
-      pendingExportCallback();
-      setPendingExportCallback(null);
+    if (pendingDownloadRef.current) {
+      pendingDownloadRef.current();
+      pendingDownloadRef.current = null;
     }
   };
 
@@ -171,7 +173,6 @@ export default function DashboardPage() {
         onExportCheck={handleExportRequested}
       />
 
-      {/* Side Floating Feedback Button */}
       <FloatingFeedbackButton formUrl={GOOGLE_FORM_URL} />
 
       {/* Top Controls Bar */}
@@ -203,7 +204,6 @@ export default function DashboardPage() {
       </div>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Sliding Left Panel */}
         <aside
           className={`fixed md:relative z-30 top-0 bottom-0 left-0 bg-white border-r border-slate-200 transition-all duration-300 ease-in-out flex flex-col shadow-xl md:shadow-none ${
             isSidebarOpen
@@ -245,7 +245,6 @@ export default function DashboardPage() {
           </div>
         </aside>
 
-        {/* Mobile Backdrop Overlay */}
         {isSidebarOpen && (
           <div
             onClick={() => setIsSidebarOpen(false)}
@@ -253,7 +252,6 @@ export default function DashboardPage() {
           />
         )}
 
-        {/* Main Content Area */}
         <main className="flex-1 p-2 sm:p-4 overflow-y-auto bg-slate-50 w-full">
           <ExcelSheet
             leads={leads}
@@ -262,19 +260,16 @@ export default function DashboardPage() {
             onToggleSelect={handleToggleSelect}
             onToggleAll={handleToggleAll}
             setLeads={setLeads}
-            onExportCheck={handleExportRequested}
           />
         </main>
       </div>
 
-      {/* Google Feedback Modal */}
       <GoogleFeedbackModal
         isOpen={showFeedbackModal}
         formUrl={GOOGLE_FORM_URL}
         onSuccess={handleFeedbackSuccess}
       />
 
-      {/* Loading Overlay */}
       {loading && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-slate-900/40 backdrop-blur-xs p-4"

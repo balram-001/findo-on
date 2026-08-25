@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
+import { FileText, CheckCircle2, ExternalLink } from "lucide-react";
 
 interface GoogleFeedbackModalProps {
   isOpen: boolean;
@@ -13,85 +14,71 @@ export default function GoogleFeedbackModal({
   onSuccess,
   formUrl,
 }: GoogleFeedbackModalProps) {
-  const [hasClickedForm, setHasClickedForm] = useState(false);
-  const [error, setError] = useState("");
+  const [hasOpenedForm, setHasOpenedForm] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
 
   if (!isOpen) return null;
 
-  const handleOpenGoogleForm = () => {
+  const handleOpenForm = () => {
     window.open(formUrl, "_blank");
-    setHasClickedForm(true);
+    setHasOpenedForm(true);
     setError("");
   };
 
-  const handleUnlockData = () => {
-    if (!hasClickedForm) {
-      setError("Pehle upar diye gaye button se Feedback Form open karein!");
+  const handleUnlockAndDownload = () => {
+    if (!hasOpenedForm) {
+      setError("Kripya pehle upar diye gaye button se feedback form open karein.");
       return;
     }
 
-    // Mark as submitted permanently in localStorage
     localStorage.setItem("leadflow_feedback_given", "true");
     onSuccess();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl transition-all dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
-        {/* Top Icon */}
-        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-900/30">
-          <svg
-            className="w-7 h-7"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 text-center">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+          <FileText className="w-6 h-6" />
         </div>
 
-        <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+        <h3 className="text-lg font-bold text-slate-900">
           Quick Feedback Required
         </h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
-          Leads explore karne ke liye 10 seconds ka feedback Google Form par dein. Yeh popup sirf pehli baar fetch karte waqt aayega.
+        <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+          Leads download karne ke liye 10 seconds ka feedback Google Form par dein. Feedback submit karte hi sheet automatically download ho jayegi.
         </p>
 
         {error && (
-          <div className="mt-3 rounded-lg bg-red-50 p-2.5 text-xs font-semibold text-red-600 dark:bg-red-900/20 dark:text-red-400">
+          <div className="mt-3 rounded-lg bg-red-50 p-2 text-xs font-semibold text-red-600 border border-red-200">
             {error}
           </div>
         )}
 
-        <div className="mt-6 space-y-3">
-          {/* Button 1: Open Google Form */}
+        <div className="mt-5 space-y-2.5">
           <button
-            onClick={handleOpenGoogleForm}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition hover:bg-blue-700 active:scale-[0.98]"
+            type="button"
+            onClick={handleOpenForm}
+            className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 transition active:scale-[0.98] cursor-pointer"
           >
-            <span>📝</span> Open Google Feedback Form
+            <ExternalLink className="w-4 h-4" /> 1. Open Google Feedback Form
           </button>
 
-          {/* Button 2: Unlock Leads */}
           <button
-            onClick={handleUnlockData}
-            className={`w-full rounded-xl py-3 text-sm font-semibold transition border ${
-              hasClickedForm
-                ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
-                : "bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800 dark:border-slate-700 cursor-not-allowed"
+            type="button"
+            onClick={handleUnlockAndDownload}
+            className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition border cursor-pointer ${
+              hasOpenedForm
+                ? "bg-slate-900 text-white border-slate-900 hover:bg-slate-800 shadow-sm active:scale-[0.98]"
+                : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
             }`}
           >
-            ✓ I Have Submitted → Unlock Leads
+            <CheckCircle2 className="w-4 h-4" /> 2. I Have Submitted → Auto Download Excel
           </button>
         </div>
 
-        <p className="mt-4 text-[11px] text-slate-400">
-          Ek baar submit karne ke baad yeh popup dobara nahi dikhega.
+        <p className="mt-3 text-[11px] text-slate-400">
+          Ek baar submit karne ke baad yeh popup dobara kabhi nahi aayega.
         </p>
       </div>
     </div>
