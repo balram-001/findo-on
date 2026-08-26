@@ -207,20 +207,17 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
 
         const websiteInfo = classifyWebsite(item.website, item.websiteKind);
 
-        const hasGstin = !!item.gstin && item.gstin !== "N/A";
         const uniqueId = String(item.id || `lead-${idx}`);
-        const gstStatus = hasGstin ? String(item.gstStatus || item.gstCheck || "UNVERIFIED") : "UNVERIFIED";
-        const providedScore = Number(item.leadScore);
+        const gstStatus = "SOON";
         const calculatedScore = Math.min(100,
           10 +
           (classified.phoneType === "Mobile" ? 30 : 0) +
           (item.isWhatsapp || item.is_whatsapp ? 15 : 0) +
           (websiteInfo.kind === "official" ? 15 : 0) +
-          (hasGstin ? 20 : 0) +
-          (gstStatus === "ACTIVE" ? 10 : 0) +
           (item.location || item.city ? 10 : 0)
         );
-        const leadScore = Number.isFinite(providedScore) && providedScore > 0 ? providedScore : calculatedScore;
+        // Quality is based only on contact and listing data, never GSTIN or GST verification.
+        const leadScore = calculatedScore;
 
         return {
           id: uniqueId,
