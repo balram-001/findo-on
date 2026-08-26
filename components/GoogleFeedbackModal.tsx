@@ -8,25 +8,54 @@ interface GoogleFeedbackModalProps {
   onClose: () => void;
 }
 
+type StoredFeedback = {
+  id: number;
+  rating: number;
+  comment: string;
+  name: string;
+  email: string;
+};
+
+const FEEDBACK_STORAGE_KEY = "leadflow_feedback_submission";
+
+function getStoredFeedback(): StoredFeedback | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const savedFeedback = localStorage.getItem(FEEDBACK_STORAGE_KEY);
+    if (!savedFeedback) return null;
+    const parsed = JSON.parse(savedFeedback) as StoredFeedback;
+    return Number.isInteger(parsed.id) && parsed.rating && parsed.comment ? parsed : null;
+  } catch {
+    localStorage.removeItem(FEEDBACK_STORAGE_KEY);
+    return null;
+  }
+}
+
 export default function GoogleFeedbackModal({
   isOpen,
   onClose,
 }: GoogleFeedbackModalProps) {
-  const [rating, setRating] = useState(0);
-  const [comment, setComment] = useState("");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [storedFeedback] = useState<StoredFeedback | null>(getStoredFeedback);
+  const [rating, setRating] = useState(() => storedFeedback?.rating || 0);
+  const [comment, setComment] = useState(() => storedFeedback?.comment || "");
+  const [name, setName] = useState(() => storedFeedback?.name || "");
+  const [email, setEmail] = useState(() => storedFeedback?.email || "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(() => Boolean(storedFeedback));
+  const [feedbackId, setFeedbackId] = useState<number | null>(() => storedFeedback?.id || null);
 
   if (!isOpen) return null;
 
   const handleClose = () => {
     if (submitting) return;
     setError("");
-    setSubmitted(false);
     onClose();
+  };
+
+  const handleEdit = () => {
+    setError("");
+    setSubmitted(false);
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -40,16 +69,19 @@ export default function GoogleFeedbackModal({
     setError("");
     try {
       const response = await fetch("/api/feedback", {
-        method: "POST",
+        method: feedbackId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating, comment, name, email }),
+        body: JSON.stringify({ id: feedbackId, rating, comment, name, email }),
       });
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.success) {
         throw new Error(data?.error || "Unable to save feedback. Please try again.");
       }
+      const savedId = Number(data.id || feedbackId);
+      if (!Number.isInteger(savedId) || savedId < 1) throw new Error("Unable to save feedback. Please try again.");
+      setFeedbackId(savedId);
+      localStorage.setItem(FEEDBACK_STORAGE_KEY, JSON.stringify({ id: savedId, rating, comment, name, email }));
       setSubmitted(true);
-      window.setTimeout(handleClose, 1200);
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "Unable to save feedback. Please try again.");
     } finally {
@@ -66,8 +98,9 @@ export default function GoogleFeedbackModal({
         {submitted ? (
           <div className="py-8 text-center">
             <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
-            <h3 className="mt-3 text-lg font-bold text-slate-900">Thank you!</h3>
-            <p className="mt-1 text-xs text-slate-500">Your feedback has been submitted.</p>
+            <h3 className="mt-3 text-lg font-bold text-slate-900">Feedback submitted successfully</h3>
+            <p className="mt-1 text-xs text-slate-500">Thank you for helping us improve Findo-On.</p>
+            <button type="button" onClick={handleEdit} className="mt-5 rounded-xl border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">Edit your feedback</button>
           </div>
         ) : (
           <form onSubmit={handleSubmit}>

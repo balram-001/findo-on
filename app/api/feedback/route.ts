@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 
 type FeedbackPayload = {
+  id?: unknown;
   rating?: unknown;
   comment?: unknown;
   name?: unknown;
@@ -15,8 +16,17 @@ function text(value: unknown, maxLength: number) {
 }
 
 export async function POST(request: Request) {
+  return saveFeedback(request, false);
+}
+
+export async function PATCH(request: Request) {
+  return saveFeedback(request, true);
+}
+
+async function saveFeedback(request: Request, isUpdate: boolean) {
   try {
     const body = await request.json() as FeedbackPayload;
+    const id = Number(body.id);
     const rating = Number(body.rating);
     const comment = text(body.comment, 2000);
     const name = text(body.name, 120);
@@ -33,13 +43,20 @@ export async function POST(request: Request) {
     }
 
     const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { error } = await supabase.from("feedback_submissions").insert({ rating, comment, name: name || null, email: email || null });
+    if (isUpdate && (!Number.isInteger(id) || id < 1)) {
+      return NextResponse.json({ success: false, error: "Invalid feedback submission." }, { status: 400 });
+    }
+
+    const feedback = { rating, comment, name: name || null, email: email || null };
+    const { data, error } = isUpdate
+      ? await supabase.from("feedback_submissions").update(feedback).eq("id", id).select("id").single()
+      : await supabase.from("feedback_submissions").insert(feedback).select("id").single();
     if (error) {
       console.error("Unable to store feedback:", error.message);
       return NextResponse.json({ success: false, error: "Unable to save feedback. Please try again." }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, id: data.id });
   } catch {
     return NextResponse.json({ success: false, error: "Invalid feedback submission." }, { status: 400 });
   }
