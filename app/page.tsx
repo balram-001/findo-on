@@ -11,8 +11,7 @@ import SidebarFilters from "@/components/SidebarFilters";
 import ExcelSheet, { Lead } from "@/components/ExcelSheet";
 import HeaderBar from "@/components/HeaderBar";
 import FloatingFeedbackButton from "@/components/FloatingFeedbackButton";
-
-const GOOGLE_FORM_URL = "https://forms.gle/GaYQagiozAqDe1Nw6";
+import GoogleFeedbackModal from "@/components/GoogleFeedbackModal";
 
 export default function DashboardPage() {
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
@@ -23,6 +22,7 @@ export default function DashboardPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
 
   const handleToggleSelect = (id: number | string) => {
     setLeads((prev) =>
@@ -143,7 +143,7 @@ export default function DashboardPage() {
         leadsData={leads}
       />
 
-      <FloatingFeedbackButton formUrl={GOOGLE_FORM_URL} />
+      <FloatingFeedbackButton onClick={() => setIsFeedbackOpen(true)} />
 
       {/* Top Controls Bar */}
       <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center justify-between shrink-0 shadow-2xs z-20">
@@ -233,6 +233,8 @@ export default function DashboardPage() {
           />
         </main>
       </div>
+
+      <GoogleFeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
 
       {loading && (
         <div
