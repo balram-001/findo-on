@@ -209,12 +209,13 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
 
         const uniqueId = String(item.id || `lead-${idx}`);
         const gstStatus = "SOON";
+        // 100-point scale: only contact and listing details are scored; GST is excluded.
         const calculatedScore = Math.min(100,
           10 +
-          (classified.phoneType === "Mobile" ? 30 : 0) +
-          (item.isWhatsapp || item.is_whatsapp ? 15 : 0) +
-          (websiteInfo.kind === "official" ? 15 : 0) +
-          (item.location || item.city ? 10 : 0)
+          (classified.phoneType === "Mobile" ? 35 : 0) +
+          (classified.isWhatsapp ? 20 : 0) +
+          (websiteInfo.kind === "official" ? 20 : 0) +
+          (item.location || item.city ? 15 : 0)
         );
         // Quality is based only on contact and listing data, never GSTIN or GST verification.
         const leadScore = calculatedScore;
@@ -239,12 +240,11 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
           gstStatus,
           leadScore,
           leadTier:
-            item.leadTier ||
-            (leadScore >= 70
+            leadScore >= 70
               ? "A"
               : leadScore >= 45
               ? "B"
-              : "C"),
+              : "C",
           selected: !!item.selected,
         };
       })
