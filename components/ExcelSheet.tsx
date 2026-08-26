@@ -12,7 +12,6 @@ import {
   MessageCircle,
   Globe,
   Filter,
-  CheckCircle2,
   AlertTriangle,
   HelpCircle,
   ChevronDown,
@@ -594,10 +593,10 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                     <span className={`inline-flex min-w-7 justify-center rounded px-1 py-0.5 text-[9px] font-bold ${lead.leadTier === "A" ? "bg-emerald-100 text-emerald-700" : lead.leadTier === "B" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{lead.leadTier} {lead.leadScore || "-"}</span>
                   </td>
                   <td className="px-2 font-mono text-slate-600 text-[10px] border-r border-slate-200">
-                    {lead.gstin !== "N/A" ? <span className="font-mono bg-slate-50 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 font-semibold">{lead.gstin}</span> : <span className="text-slate-400 text-[9px]">N/A</span>}
+                    <span className="font-mono bg-slate-50 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 font-semibold">Coming</span>
                   </td>
                   <td className="px-2 text-center">
-                    {lead.gstStatus === "ACTIVE" ? <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-2.5 h-2.5" /> ACTIVE</span> : <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-500" title="No verified GST data available"><HelpCircle className="w-2.5 h-2.5" /> UNVERIFIED</span>}
+                    <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-500" title="GST verification will be available soon"><HelpCircle className="w-2.5 h-2.5" /> SOON</span>
                   </td>
                 </tr>
               ))
