@@ -209,15 +209,18 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
 
         const uniqueId = String(item.id || `lead-${idx}`);
         const gstStatus = "SOON";
-        // 100-point scale: only contact and listing details are scored; GST is excluded.
+        const hasLocation = Boolean((item.location || item.city || "").trim()) && (item.location || item.city || "").trim().toLowerCase() !== "n/a";
+        const phoneSource = item.phoneSource || "maps_fallback";
+        const phoneScore = classified.phoneType === "Mobile" ? 40 : classified.phoneType === "Landline" ? 20 : 0;
+        const sourceScore = classified.phoneType === "Missing" ? 0 : phoneSource === "official_website" ? 20 : 5;
+        // 100-point scale: Quality measures usable contact/listing data only. GST and inferred WhatsApp status are excluded.
         const calculatedScore = Math.min(100,
-          10 +
-          (classified.phoneType === "Mobile" ? 35 : 0) +
-          (classified.isWhatsapp ? 20 : 0) +
-          (websiteInfo.kind === "official" ? 20 : 0) +
-          (item.location || item.city ? 15 : 0)
+          phoneScore +
+          sourceScore +
+          (websiteInfo.kind === "official" ? 25 : 0) +
+          (hasLocation ? 15 : 0)
         );
-        // Quality is based only on contact and listing data, never GSTIN or GST verification.
+        // Quality is based only on contact and listing data, never GSTIN, GST verification, or an inferred WhatsApp badge.
         const leadScore = calculatedScore;
 
         return {
@@ -240,7 +243,7 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
           gstStatus,
           leadScore,
           leadTier:
-            leadScore >= 70
+            leadScore >= 75
               ? "A"
               : leadScore >= 45
               ? "B"
