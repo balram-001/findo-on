@@ -92,8 +92,9 @@ export default function HeaderBar({
       const phoneDetails = getPhoneExportDetails(lead);
       const leadScore = lead.leadScore || "-";
       const leadTier = lead.leadTier || (typeof lead.leadScore === "number" && lead.leadScore >= 70 ? "A" : typeof lead.leadScore === "number" && lead.leadScore >= 45 ? "B" : "C");
-      const gstin = lead.gstin || "N/A";
-      const gstCheck = lead.gstCheck || lead.gstStatus || (gstin !== "N/A" ? "UNVERIFIED" : "N/A");
+      // GST verification is not available in exported lead sheets yet.
+      const gstin = "Coming";
+      const gstCheck = "Soon";
 
       return [
         index + 1,
