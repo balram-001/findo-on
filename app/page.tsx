@@ -15,7 +15,8 @@ import GoogleFeedbackModal from "@/components/GoogleFeedbackModal";
 
 export default function DashboardPage() {
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
-  const [city, setCity] = useState<string>("");
+  // The current lead dataset is Indore-only for the MVP.
+  const city = "Indore";
   const [numLeads, setNumLeads] = useState<number | string>(50);
   const [hideLandlines, setHideLandlines] = useState<boolean>(false);
 
@@ -200,7 +201,6 @@ export default function DashboardPage() {
               selectedIndustries={selectedIndustries}
               setSelectedIndustries={setSelectedIndustries}
               city={city}
-              setCity={setCity}
               numLeads={numLeads}
               setNumLeads={setNumLeads}
               hideLandlines={hideLandlines}

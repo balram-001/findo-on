@@ -43,7 +43,6 @@ interface SidebarProps {
   selectedIndustries: string[];
   setSelectedIndustries: React.Dispatch<React.SetStateAction<string[]>>;
   city: string;
-  setCity: (val: string) => void;
   numLeads: number | string;
   setNumLeads: React.Dispatch<React.SetStateAction<number | string>>;
   hideLandlines: boolean;
@@ -60,7 +59,6 @@ export default function SidebarFilters({
   selectedIndustries,
   setSelectedIndustries,
   city,
-  setCity,
   numLeads,
   setNumLeads,
   hideLandlines,
@@ -132,7 +130,7 @@ export default function SidebarFilters({
             <p className="mt-1 text-[10px] text-slate-500">Type karke Enter dabayein, ya arrow se select karein. 2 industries par leads equal split hongi.</p>
           </div>
 
-          {/* City Input */}
+          {/* City is fixed while the MVP has Indore-only lead coverage. */}
           <div>
             <span className="text-xs font-semibold text-slate-700">
               Location / City
@@ -142,18 +140,14 @@ export default function SidebarFilters({
               <input
                 type="text"
                 value={city}
-                onChange={(e) => {
-                  setCity(e.target.value);
-                  onFiltersChanged?.();
-                }}
-                placeholder="e.g. Indore, Pithampur, Dewas"
-                className="w-full border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 font-medium"
+                readOnly
+                aria-readonly="true"
+                title="Indore is currently the only city available in this MVP."
+                className="w-full cursor-not-allowed rounded-lg border border-slate-300 bg-slate-100 p-2.5 text-xs font-semibold text-slate-700 outline-none"
               />
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {["Surat", "Mumbai", "Indore"].map((suggestedCity) => (
-                  <button key={suggestedCity} type="button" onClick={() => { setCity(suggestedCity); onFiltersChanged?.(); }} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100">{suggestedCity}</button>
-                ))}
-              </div>
+              <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                MVP mein abhi sirf Indore ki leads available hain.
+              </p>
             </div>
           </div>
 
