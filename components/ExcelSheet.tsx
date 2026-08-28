@@ -214,11 +214,13 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
         const hasLocation = Boolean((item.location || item.city || "").trim()) && (item.location || item.city || "").trim().toLowerCase() !== "n/a";
         const phoneScore = classified.phoneType === "Mobile" ? 50 : classified.phoneType === "Landline" ? 25 : 0;
         // 100-point completion score: GST, GST Check, inferred WhatsApp status, and phone source are excluded.
-        const calculatedScore = Math.min(100,
-          phoneScore +
-          (websiteInfo.kind === "official" ? 30 : 0) +
-          (hasLocation ? 20 : 0)
-        );
+        const calculatedScore = isDemo
+          ? 100
+          : Math.min(100,
+              phoneScore +
+                (websiteInfo.kind === "official" ? 30 : 0) +
+                (hasLocation ? 20 : 0)
+            );
         // Quality is based only on contact and listing data, never GSTIN, GST verification, or an inferred WhatsApp badge.
         const leadScore = calculatedScore;
 

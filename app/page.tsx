@@ -14,24 +14,24 @@ import FloatingFeedbackButton from "@/components/FloatingFeedbackButton";
 import GoogleFeedbackModal from "@/components/GoogleFeedbackModal";
 
 // Shown only before the first search so the dashboard does not open empty.
-// These are sample rows, not verified lead records or real contact details.
+// These are sample rows, not qualified lead records. Numbers are public corporate switchboards.
 const DEMO_MANUFACTURER_LEADS: Lead[] = [
-  ["Reliance Industries Limited", "Petrochemicals", "Oil & Gas / Petrochemicals", "Mumbai, Maharashtra", "https://www.ril.com"],
-  ["Tata Steel Limited", "Steel Manufacturing", "Iron & Steel", "Jamshedpur, Jharkhand", "https://www.tatasteel.com"],
-  ["Tata Motors Limited", "Automotive Manufacturing", "Commercial Vehicles & Automotive", "Pune, Maharashtra", "https://www.tatamotors.com"],
-  ["Mahindra & Mahindra Limited", "Automotive Manufacturing", "Automobiles & Farm Equipment", "Mumbai, Maharashtra", "https://www.mahindra.com"],
-  ["Maruti Suzuki India Limited", "Automotive Manufacturing", "Passenger Vehicles", "Gurugram, Haryana", "https://www.marutisuzuki.com"],
-  ["Larsen & Toubro Limited", "Heavy Engineering", "Engineering & Construction", "Mumbai, Maharashtra", "https://www.larsentoubro.com"],
-  ["Hindustan Unilever Limited", "FMCG Manufacturing", "Consumer Goods", "Mumbai, Maharashtra", "https://www.hul.co.in"],
-  ["ITC Limited", "FMCG Manufacturing", "Consumer Goods & Packaging", "Kolkata, West Bengal", "https://www.itcportal.com"],
-  ["JSW Steel Limited", "Steel Manufacturing", "Iron & Steel", "Mumbai, Maharashtra", "https://www.jsw.in"],
-  ["UltraTech Cement Limited", "Cement Manufacturing", "Cement & Building Materials", "Mumbai, Maharashtra", "https://www.ultratechcement.com"],
-  ["Asian Paints Limited", "Paint Manufacturing", "Paints & Coatings", "Mumbai, Maharashtra", "https://www.asianpaints.com"],
-  ["Bajaj Auto Limited", "Automotive Manufacturing", "Two & Three Wheelers", "Pune, Maharashtra", "https://www.bajajauto.com"],
-  ["Hero MotoCorp Limited", "Automotive Manufacturing", "Two Wheelers", "Gurugram, Haryana", "https://www.heromotocorp.com"],
-  ["Bharat Forge Limited", "Industrial Manufacturing", "Forging & Engineering", "Pune, Maharashtra", "https://www.bharatforge.com"],
-  ["Godrej & Boyce Manufacturing Company Limited", "Industrial Manufacturing", "Engineering & Consumer Products", "Mumbai, Maharashtra", "https://www.godrejenterprises.com"],
-].map(([companyName, industry, category, location, website], index) => ({
+  ["Reliance Industries Limited", "Petrochemicals", "Oil & Gas / Petrochemicals", "Mumbai, Maharashtra", "https://www.ril.com", "+91 22 3555 5000"],
+  ["Tata Steel Limited", "Steel Manufacturing", "Iron & Steel", "Jamshedpur, Jharkhand", "https://www.tatasteel.com", "+91 22 6665 8282"],
+  ["Tata Motors Limited", "Automotive Manufacturing", "Commercial Vehicles & Automotive", "Pune, Maharashtra", "https://www.tatamotors.com", "+91 22 6665 8282"],
+  ["Mahindra & Mahindra Limited", "Automotive Manufacturing", "Automobiles & Farm Equipment", "Mumbai, Maharashtra", "https://www.mahindra.com", "+91 22 6897 5500"],
+  ["Maruti Suzuki India Limited", "Automotive Manufacturing", "Passenger Vehicles", "Gurugram, Haryana", "https://www.marutisuzuki.com", "+91 11 4678 1000"],
+  ["Larsen & Toubro Limited", "Heavy Engineering", "Engineering & Construction", "Mumbai, Maharashtra", "https://www.larsentoubro.com", "+91 22 6752 5656"],
+  ["Hindustan Unilever Limited", "FMCG Manufacturing", "Consumer Goods", "Mumbai, Maharashtra", "https://www.hul.co.in", "+91 22 5043 2790"],
+  ["ITC Limited", "FMCG Manufacturing", "Consumer Goods & Packaging", "Kolkata, West Bengal", "https://www.itcportal.com", "+91 33 2288 9371"],
+  ["JSW Steel Limited", "Steel Manufacturing", "Iron & Steel", "Mumbai, Maharashtra", "https://www.jsw.in", "+91 22 4286 1000"],
+  ["UltraTech Cement Limited", "Cement Manufacturing", "Cement & Building Materials", "Mumbai, Maharashtra", "https://www.ultratechcement.com", "+91 22 6691 7800"],
+  ["Asian Paints Limited", "Paint Manufacturing", "Paints & Coatings", "Mumbai, Maharashtra", "https://www.asianpaints.com", "+91 22 6218 1000"],
+  ["Bajaj Auto Limited", "Automotive Manufacturing", "Two & Three Wheelers", "Pune, Maharashtra", "https://www.bajajauto.com", "020 2747 2851"],
+  ["Hero MotoCorp Limited", "Automotive Manufacturing", "Two Wheelers", "Gurugram, Haryana", "https://www.heromotocorp.com", "+91 11 4604 4200"],
+  ["Bharat Forge Limited", "Industrial Manufacturing", "Forging & Engineering", "Pune, Maharashtra", "https://www.bharatforge.com", "020 2682 2452"],
+  ["Godrej & Boyce Manufacturing Company Limited", "Industrial Manufacturing", "Engineering & Consumer Products", "Mumbai, Maharashtra", "https://www.godrejenterprises.com", "022 6796 5656"],
+].map(([companyName, industry, category, location, website, phone], index) => ({
   id: `demo-manufacturer-${index + 1}`,
   companyName,
   industry,
@@ -40,9 +40,12 @@ const DEMO_MANUFACTURER_LEADS: Lead[] = [
   city: "India",
   website,
   websiteKind: "official",
-  phone: "N/A",
+  phone,
+  phoneSource: "official_website",
   gstin: `DEMO-GST-${String(index + 1).padStart(3, "0")}`,
   gstCheck: "Demo / not verified",
+  leadScore: 100,
+  leadTier: "A",
   isDemo: true,
 }));
 
