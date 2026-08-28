@@ -45,6 +45,7 @@ export interface Lead {
   gstin?: string;
   gstStatus?: string | boolean;
   gstCheck?: string;
+  isDemo?: boolean;
   leadScore?: number;
   leadTier?: "A" | "B" | "C" | string;
   selected?: boolean;
@@ -208,7 +209,8 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
         const websiteInfo = classifyWebsite(item.website, item.websiteKind);
 
         const uniqueId = String(item.id || `lead-${idx}`);
-        const gstStatus = "SOON";
+        const isDemo = Boolean(item.isDemo);
+        const gstStatus = isDemo ? "DEMO" : "SOON";
         const hasLocation = Boolean((item.location || item.city || "").trim()) && (item.location || item.city || "").trim().toLowerCase() !== "n/a";
         const phoneScore = classified.phoneType === "Mobile" ? 50 : classified.phoneType === "Landline" ? 25 : 0;
         // 100-point completion score: GST, GST Check, inferred WhatsApp status, and phone source are excluded.
@@ -238,6 +240,8 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
           websiteKind: websiteInfo.kind,
           gstin: item.gstin || "N/A",
           gstStatus,
+          gstCheck: isDemo ? item.gstCheck || "Demo / not verified" : "Soon",
+          isDemo,
           leadScore,
           leadTier:
             leadScore >= 75
@@ -590,10 +594,10 @@ export const ExcelSheet: React.FC<ExcelSheetProps> = ({
                     <span className={`inline-flex min-w-7 justify-center rounded px-1 py-0.5 text-[9px] font-bold ${lead.leadTier === "A" ? "bg-emerald-100 text-emerald-700" : lead.leadTier === "B" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{lead.leadTier} {lead.leadScore || "-"}</span>
                   </td>
                   <td className="px-2 font-mono text-slate-600 text-[10px] border-r border-slate-200">
-                    <span className="font-mono bg-slate-50 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 font-semibold">Coming</span>
+                    <span className="font-mono bg-slate-50 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 font-semibold">{lead.isDemo ? lead.gstin : "Coming"}</span>
                   </td>
                   <td className="px-2 text-center">
-                    <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-500" title="GST verification will be available soon"><HelpCircle className="w-2.5 h-2.5" /> SOON</span>
+                    <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-500" title={lead.isDemo ? "Demo value — not a verified GST record" : "GST verification will be available soon"}><HelpCircle className="w-2.5 h-2.5" /> {lead.isDemo ? "DEMO" : "SOON"}</span>
                   </td>
                 </tr>
               ))

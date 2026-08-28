@@ -22,6 +22,7 @@ export interface Lead {
   gstin?: string;
   gstStatus?: string | boolean;
   gstCheck?: string;
+  isDemo?: boolean;
   leadScore?: number;
   leadTier?: "A" | "B" | "C" | string;
   whatsappLink?: string;
@@ -92,9 +93,9 @@ export default function HeaderBar({
       const phoneDetails = getPhoneExportDetails(lead);
       const leadScore = lead.leadScore || "-";
       const leadTier = lead.leadTier || (typeof lead.leadScore === "number" && lead.leadScore >= 70 ? "A" : typeof lead.leadScore === "number" && lead.leadScore >= 45 ? "B" : "C");
-      // GST verification is not available in exported lead sheets yet.
-      const gstin = "Coming";
-      const gstCheck = "Soon";
+      // Sample rows must remain visibly non-verified in exports as well.
+      const gstin = lead.isDemo ? lead.gstin || "DEMO GSTIN" : "Coming";
+      const gstCheck = lead.isDemo ? lead.gstCheck || "Demo / not verified" : "Soon";
 
       return [
         index + 1,

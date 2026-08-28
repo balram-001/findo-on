@@ -13,6 +13,39 @@ import HeaderBar from "@/components/HeaderBar";
 import FloatingFeedbackButton from "@/components/FloatingFeedbackButton";
 import GoogleFeedbackModal from "@/components/GoogleFeedbackModal";
 
+// Shown only before the first search so the dashboard does not open empty.
+// These are sample rows, not verified lead records or real contact details.
+const DEMO_MANUFACTURER_LEADS: Lead[] = [
+  ["Reliance Industries Limited", "Petrochemicals", "Oil & Gas / Petrochemicals", "Mumbai, Maharashtra", "https://www.ril.com"],
+  ["Tata Steel Limited", "Steel Manufacturing", "Iron & Steel", "Jamshedpur, Jharkhand", "https://www.tatasteel.com"],
+  ["Tata Motors Limited", "Automotive Manufacturing", "Commercial Vehicles & Automotive", "Pune, Maharashtra", "https://www.tatamotors.com"],
+  ["Mahindra & Mahindra Limited", "Automotive Manufacturing", "Automobiles & Farm Equipment", "Mumbai, Maharashtra", "https://www.mahindra.com"],
+  ["Maruti Suzuki India Limited", "Automotive Manufacturing", "Passenger Vehicles", "Gurugram, Haryana", "https://www.marutisuzuki.com"],
+  ["Larsen & Toubro Limited", "Heavy Engineering", "Engineering & Construction", "Mumbai, Maharashtra", "https://www.larsentoubro.com"],
+  ["Hindustan Unilever Limited", "FMCG Manufacturing", "Consumer Goods", "Mumbai, Maharashtra", "https://www.hul.co.in"],
+  ["ITC Limited", "FMCG Manufacturing", "Consumer Goods & Packaging", "Kolkata, West Bengal", "https://www.itcportal.com"],
+  ["JSW Steel Limited", "Steel Manufacturing", "Iron & Steel", "Mumbai, Maharashtra", "https://www.jsw.in"],
+  ["UltraTech Cement Limited", "Cement Manufacturing", "Cement & Building Materials", "Mumbai, Maharashtra", "https://www.ultratechcement.com"],
+  ["Asian Paints Limited", "Paint Manufacturing", "Paints & Coatings", "Mumbai, Maharashtra", "https://www.asianpaints.com"],
+  ["Bajaj Auto Limited", "Automotive Manufacturing", "Two & Three Wheelers", "Pune, Maharashtra", "https://www.bajajauto.com"],
+  ["Hero MotoCorp Limited", "Automotive Manufacturing", "Two Wheelers", "Gurugram, Haryana", "https://www.heromotocorp.com"],
+  ["Bharat Forge Limited", "Industrial Manufacturing", "Forging & Engineering", "Pune, Maharashtra", "https://www.bharatforge.com"],
+  ["Godrej & Boyce Manufacturing Company Limited", "Industrial Manufacturing", "Engineering & Consumer Products", "Mumbai, Maharashtra", "https://www.godrejenterprises.com"],
+].map(([companyName, industry, category, location, website], index) => ({
+  id: `demo-manufacturer-${index + 1}`,
+  companyName,
+  industry,
+  category,
+  location,
+  city: "India",
+  website,
+  websiteKind: "official",
+  phone: "N/A",
+  gstin: `DEMO-GST-${String(index + 1).padStart(3, "0")}`,
+  gstCheck: "Demo / not verified",
+  isDemo: true,
+}));
+
 export default function DashboardPage() {
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   // The current lead dataset is Indore-only for the MVP.
@@ -20,7 +53,7 @@ export default function DashboardPage() {
   const [numLeads, setNumLeads] = useState<number | string>(50);
   const [hideLandlines, setHideLandlines] = useState<boolean>(false);
 
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leads, setLeads] = useState<Lead[]>(DEMO_MANUFACTURER_LEADS);
   const [loading, setLoading] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
